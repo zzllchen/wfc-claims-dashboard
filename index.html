@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WFC Claims</title>
+<meta name="theme-color" content="#1f4ad8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f4ad8'/%3E%3Cpath d='M8 11l3 11 5-8 5 8 3-11' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css?v=3">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><img id="brandLogo" alt="WFC Systems"><span>Claims</span></div>
+    <div class="topbtns">
+      <span class="upd" id="updText" aria-live="polite"></span>
+      <button class="ghost" id="btnRefresh" type="button">Refresh</button>
+      <div class="menuwrap">
+        <button class="ghost" id="btnExport" type="button" aria-haspopup="true" aria-expanded="false">Export</button>
+        <div class="menu" id="exportMenu" hidden>
+          <button type="button" data-export="claims">Claims list <small>one row per claim</small></button>
+          <button type="button" data-export="lines">Every line <small>one row per receipt line</small></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="banner"></div>
+
+  <section class="tiles" id="tiles" aria-label="Claims by status"></section>
+
+  <div class="toolbar">
+    <label class="f"><span>Month</span><select id="fMonth"></select></label>
+    <label class="f"><span>Staff</span><select id="fStaff"></select></label>
+    <label class="f grow"><span>Search</span><input type="search" id="fSearch" placeholder="Name, shop, receipt no. ..." autocomplete="off"></label>
+  </div>
+
+  <div class="layout">
+    <section class="card tablecard" aria-label="Claims">
+      <div class="scroll">
+        <table id="tbl">
+          <thead><tr>
+            <th><button class="sort" data-sort="claimant" type="button">Staff</button></th>
+            <th class="hide-sm"><button class="sort" data-sort="month" type="button">Month</button></th>
+            <th class="num hide-sm"><button class="sort" data-sort="lines" type="button">Lines</button></th>
+            <th class="num"><button class="sort" data-sort="total" type="button">Total</button></th>
+            <th class="hide-sm"><button class="sort" data-sort="updatedAt" type="button">Sent</button></th>
+            <th><button class="sort" data-sort="status" type="button">Status</button></th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty" hidden></div>
+      <div class="tfoot" id="tfoot"></div>
+    </section>
+    <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
+  </div>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Claim details"></aside>
+
+<dialog id="viewer">
+  <div class="vhead"><b id="vTitle"></b><span class="vact"><a class="ghostlink" id="vDownload" download>Download</a><button class="ghost" id="vClose" type="button">Close</button></span></div>
+  <div class="vbody" id="vBody"></div>
+</dialog>
+
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="assets/logo.js"></script>
+<script src="js/config.js?v=2"></script>
+<script src="js/inbox.js?v=2"></script>
+<script src="js/sample.js?v=1"></script>
+<script src="js/app.js?v=1"></script>
+</body>
+</html>
