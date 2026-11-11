@@ -283,6 +283,11 @@
       h('div', { class: 'dbody' },
         h('div', { class: 'big' }, h('span', { class: 'n', text: money(c.total) }), h('span', { class: 'l', text: `${c.lines.length} line${c.lines.length > 1 ? 's' : ''}` })),
 
+        // the two things the accountant wants most, one click away; the files come through the inbox, so no Google account or Drive access is needed
+        (c.files || []).length ? h('div', { class: 'quick' },
+          (c.files || []).some((f) => f.kind === 'form-pdf') ? h('button', { class: 'primary', type: 'button', text: 'Open claim form', onclick: () => viewFile(c, c.files.find((f) => f.kind === 'form-pdf')) }) : null,
+          h('button', { class: 'ghost', type: 'button', id: 'btnAllFiles', text: 'Download everything (.zip)', onclick: (e) => downloadAll(c, e.currentTarget) })) : null,
+
         h('div', { class: 'sec' }, h('h3', { text: 'Status' }),
           h('div', { class: 'seg', role: 'group', 'aria-label': 'Status' }, STATUS_KEYS.map((k) => h('button', { class: `s-${k}`, type: 'button', 'aria-pressed': c.status === k ? 'true' : 'false', onclick: () => changeStatus(c.id, k) }, h('span', { class: 'dot' }), STATUS[k]))),
           h('div', { class: 'note-row' }, noteBox, h('div', { class: 'acts' }, saveNote))),
@@ -304,7 +309,7 @@
               : h('div', {}, (c.files || []).map((f) => h('div', { class: 'fl' },
                 h('div', { style: 'min-width:0' }, h('div', { class: 'fn', title: f.name, text: f.name }), h('div', { class: 'fs', text: `${fileKind[f.kind] || 'File'} · ${sizeText(f.size)}` })),
                 h('div', { class: 'fa' }, h('button', { class: 'link', type: 'button', text: 'View', onclick: () => viewFile(c, f) }), h('button', { class: 'link', type: 'button', text: 'Download', onclick: () => downloadFile(c, f) })))),
-                h('div', { style: 'margin-top:12px' }, h('button', { class: 'ghost', type: 'button', id: 'btnAllFiles', text: `Download everything (.zip)`, onclick: (e) => downloadAll(c, e.currentTarget) })))),
+                h('p', { class: 'hint', text: 'Files open straight from here. No Google account is needed.' }))),
 
         h('div', { class: 'sec' }, h('h3', { text: 'Sent' }),
           h('dl', { class: 'kv' },
