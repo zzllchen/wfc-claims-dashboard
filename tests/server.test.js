@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { start } = require('../server/server');
-const { runProtocol } = require('./protocol');
+const { runProtocol, runAuth } = require('./protocol');
 
 (async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wfc-claims-test-'));
@@ -41,6 +41,18 @@ const { runProtocol } = require('./protocol');
     const bad = await fetch(srv.url + '/api', { method: 'POST', body: 'not json' });
     assert.strictEqual(bad.status, 400);
     console.log('server tests passed');
+
+    // the same inbox started with a password
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'wfc-claims-test-pw-'));
+    const locked = await start({ port: 0, dataDir: dir2, quiet: true, password: 'Correct Horse 42' });
+    try {
+      const api2 = {
+        async get(q) { const r = await fetch(locked.url + '/api?' + new URLSearchParams(q)); return r.json(); },
+        async post(b) { const r = await fetch(locked.url + '/api', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(b) }); return r.json(); },
+      };
+      await runAuth(api2, 'Correct Horse 42', (s) => console.log('  ok  password: ' + s));
+    } finally { await locked.close(); fs.rmSync(dir2, { recursive: true, force: true }); }
+    console.log('server password tests passed');
   } finally {
     await srv.close();
     fs.rmSync(dataDir, { recursive: true, force: true });

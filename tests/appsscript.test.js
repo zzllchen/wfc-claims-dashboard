@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { runProtocol } = require('./protocol');
+const { runProtocol, runAuth } = require('./protocol');
 
 function fakeGoogle() {
   const props = {};
@@ -69,6 +69,7 @@ function fakeGoogle() {
       base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),      // Google gives signed bytes
       base64Encode: (bytes) => Buffer.from(bytes.map((b) => b & 255)).toString('base64'),
       newBlob: (bytes, mime, name) => ({ getBytes: () => bytes, getContentType: () => mime, getName: () => name }),
+      sleep: () => {},
     },
     SpreadsheetApp: {
       create(name) { const id = nextId('sheet'); const s = makeSheet(); sheets.set(id, { name, sheet: s }); return { getId: () => id, getSheets: () => [s] }; },
@@ -103,5 +104,8 @@ function fakeGoogle() {
   assert.strictEqual(bad.ok, false);
   console.log('  ok  sheet + folder made on first use, old versions go to the bin');
 
+  // the same inbox once the password (script property DASH_KEY) is set
+  fake.props.DASH_KEY = 'Correct Horse 42';
+  await runAuth(api, 'Correct Horse 42', (s) => console.log('  ok  password: ' + s));
   console.log('Apps Script tests passed');
 })().catch((e) => { console.error('FAILED:', e); process.exit(1); });

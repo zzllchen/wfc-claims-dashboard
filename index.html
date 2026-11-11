@@ -6,7 +6,7 @@
 <title>WFC Claims</title>
 <meta name="theme-color" content="#1f4ad8">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f4ad8'/%3E%3Cpath d='M8 11l3 11 5-8 5 8 3-11' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=4">
+<link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 <header class="top">
@@ -14,6 +14,7 @@
     <div class="brand"><img id="brandLogo" alt="WFC Systems"><span>Claims</span></div>
     <div class="topbtns">
       <span class="upd" id="updText" aria-live="polite"></span>
+      <button class="quiet" id="btnLock" type="button" hidden>Sign out</button>
       <button class="ghost" id="btnRefresh" type="button">Refresh</button>
       <div class="menuwrap">
         <button class="ghost" id="btnExport" type="button" aria-haspopup="true" aria-expanded="false">Export</button>
@@ -67,13 +68,24 @@
   <div class="vbody" id="vBody"></div>
 </dialog>
 
+<div class="lock" id="lock" hidden>
+  <form class="lockcard" id="lockForm" autocomplete="off">
+    <img id="lockLogo" alt="WFC Systems">
+    <h1>Claims</h1>
+    <p>Enter the password to see the claims.</p>
+    <label class="f"><span>Password</span><input type="password" id="lockPw" autocomplete="current-password" required></label>
+    <p class="lockerr" id="lockErr" role="alert"></p>
+    <button class="primary" type="submit" id="lockBtn">Open</button>
+  </form>
+</div>
+
 <div class="toast" id="toast" hidden role="status"></div>
 
 <script src="vendor/jszip.min.js"></script>
 <script src="assets/logo.js"></script>
 <script src="js/config.js?v=2"></script>
-<script src="js/inbox.js?v=2"></script>
+<script src="js/inbox.js?v=3"></script>
 <script src="js/sample.js?v=1"></script>
-<script src="js/app.js?v=2"></script>
+<script src="js/app.js?v=3"></script>
 </body>
 </html>

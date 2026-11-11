@@ -98,16 +98,33 @@
     try {
       if (!S.address) S.address = await Inbox.connect();
       if (!S.address) { S.connected = false; S.error = ''; return; }
+      if (Inbox.needsKey && !Inbox.hasKey()) { showLock(''); return; }          // a password is set and this browser does not have it yet
       const claims = await Inbox.list();
+      hideLock();
       S.connected = true; S.error = ''; S.loadedAt = new Date();
       if (!S.saving) applyClaims(claims);
     } catch (e) {
+      if (e && e.code === 401) { Inbox.clearKey(); S.real = []; S.prev = null; showLock(S.askedPw ? "That password isn't right." : ''); return; }
       S.error = (e && e.message) || String(e);
       if (!S.real.length) S.connected = false;
     } finally {
       S.loading = false; S.firstLoad = false; render();
       if (!quiet && S.error) toast(S.error, true);
     }
+  }
+
+  /* ---------- the password screen (only when the inbox has a password) ---------- */
+  function showLock(msg) {
+    S.locked = true;
+    $('#lock').hidden = false; $('#lockErr').textContent = msg || '';
+    document.body.style.overflow = 'hidden';
+    closeDrawer();
+    setTimeout(() => $('#lockPw').focus(), 50);
+  }
+  function hideLock() {
+    S.locked = false; S.askedPw = false;
+    $('#lock').hidden = true; $('#lockPw').value = ''; $('#lockErr').textContent = '';
+    if (!S.open) document.body.style.overflow = '';
   }
 
   function applyClaims(next) {
@@ -135,6 +152,7 @@
   const sigOf = (c) => [c.id, c.version, c.updatedAt, c.status, c.note, (c.history || []).length, S.sample].join('|');
 
   function paintTop() {
+    $('#btnLock').hidden = !(Inbox.needsKey && Inbox.hasKey() && !S.locked);
     const t = $('#updText');
     t.textContent = S.sample ? 'Showing sample claims' : S.loadedAt ? `Updated ${clock(S.loadedAt)}` : '';
     const b = $('#btnRefresh');
@@ -336,6 +354,7 @@
       toast(`${c.claimant}: marked as ${STATUS[status]}`);
     } catch (e) {
       Object.assign(c, before);
+      if (e && e.code === 401) { Inbox.clearKey(); showLock('The password was changed. Enter the new one.'); return; }
       toast("Couldn't save that: " + ((e && e.message) || e), true);
     } finally { S.saving--; render(); }
   }
@@ -466,6 +485,17 @@
       render();
     }));
     $('#btnRefresh').addEventListener('click', () => load());
+    $('#lockForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pw = $('#lockPw').value;
+      if (!pw) return;
+      Inbox.setKey(pw); S.askedPw = true;
+      const btn = $('#lockBtn'); btn.disabled = true; btn.textContent = 'Checking…';
+      await load();
+      btn.disabled = false; btn.textContent = 'Open';
+    });
+    $('#btnLock').addEventListener('click', () => { Inbox.clearKey(); S.real = []; S.prev = null; S.sample = false; render(); showLock(''); });
+    croppedLogo().then((u) => { $('#lockLogo').src = u; }).catch(() => $('#lockLogo').remove());
     $('#scrim').addEventListener('click', closeDrawer);
     $('#vClose').addEventListener('click', () => $('#viewer').close());
     $('#viewer').addEventListener('click', (e) => { if (e.target === $('#viewer')) $('#viewer').close(); });

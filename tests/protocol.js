@@ -22,7 +22,8 @@ async function runProtocol(api, log) {
   assert.deepStrictEqual(must(await api.get({ action: 'list' }), 'list empty').claims, []);
   mustFail(await api.get({ action: 'nonsense' }), 'unknown get');
   mustFail(await api.get({ action: 'submit' }), 'a write by GET');
-  mustFail(await api.post({ action: 'list' }), 'a read by POST');
+  assert.deepStrictEqual(must(await api.post({ action: 'list' }), 'a read by POST').claims, [], 'a read may also come by POST');
+  assert.strictEqual(must(await api.get({ action: 'ping' }), 'ping').auth, false, 'no password set in this scenario');
 
   mustFail(await api.post({ action: 'submit', claim: claim({ claimant: '  ' }) }), 'no name');
   mustFail(await api.post({ action: 'submit', claim: claim({ month: 'October' }) }), 'bad month');
@@ -115,4 +116,42 @@ async function runProtocol(api, log) {
   say('delete');
 }
 
-module.exports = { runProtocol };
+/* The same inbox with a password set. The Claim Builder's calls (ping, submit, upload, finish) stay open; reading, files, status and delete need it. */
+async function runAuth(api, password, log) {
+  const say = log || (() => {});
+  const must = (r, what) => { assert.strictEqual(r.ok, true, `${what}: expected ok, got ${JSON.stringify(r).slice(0, 200)}`); return r; };
+  const refused = (r, what) => { assert.strictEqual(r.ok, false, `${what}: expected a refusal, got ${JSON.stringify(r).slice(0, 200)}`); assert.strictEqual(r.code, 401, `${what}: expected code 401, got ${JSON.stringify(r).slice(0, 200)}`); assert.ok(!JSON.stringify(r).includes(password), 'the password must never be echoed'); };
+
+  assert.strictEqual(must(await api.get({ action: 'ping' }), 'ping').auth, true, 'ping says a password is needed');
+
+  // the Claim Builder side needs no password
+  const sub = must(await api.post({ action: 'submit', claim: claim() }), 'submit without a password');
+  must(await api.post({ action: 'upload', id: sub.id, token: sub.token, file: { id: 'f1', name: 'WFC - OCT Claim form.pdf', kind: 'form-pdf', data: b64('%PDF-secret') } }), 'upload without a password');
+  must(await api.post({ action: 'finish', id: sub.id, token: sub.token }), 'finish without a password');
+  say('the Claim Builder side stays open');
+
+  // nobody else can read or change anything
+  refused(await api.get({ action: 'list' }), 'list, no key');
+  refused(await api.post({ action: 'list' }), 'list by POST, no key');
+  refused(await api.post({ action: 'list', key: 'wrong' }), 'list, wrong key');
+  refused(await api.post({ action: 'list', key: password + 'x' }), 'list, almost the key');
+  refused(await api.post({ action: 'list', key: '' }), 'list, empty key');
+  refused(await api.get({ action: 'file', id: sub.id, file: 'f1' }), 'file by GET, no key');
+  refused(await api.post({ action: 'file', id: sub.id, file: 'f1', key: 'wrong' }), 'file, wrong key');
+  refused(await api.post({ action: 'status', id: sub.id, status: 'paid' }), 'status, no key');
+  refused(await api.post({ action: 'delete', id: sub.id, key: 'wrong' }), 'delete, wrong key');
+  say('reading and changing are refused without the password');
+
+  // with the password everything works, by POST and by GET
+  const list = must(await api.post({ action: 'list', key: password }), 'list with the key').claims;
+  assert.strictEqual(list.length, 1); assert.strictEqual(list[0].status, 'new', 'the refused status change did not happen');
+  assert.strictEqual(JSON.stringify(list).includes(password), false);
+  assert.strictEqual(must(await api.get({ action: 'list', key: password }), 'list by GET with the key').claims.length, 1);
+  assert.strictEqual(must(await api.post({ action: 'file', id: sub.id, file: 'f1', key: password }), 'file with the key').data, b64('%PDF-secret'));
+  assert.strictEqual(must(await api.post({ action: 'status', id: sub.id, status: 'checked', key: password }), 'status with the key').claim.status, 'checked');
+  must(await api.post({ action: 'delete', id: sub.id, key: password }), 'delete with the key');
+  assert.deepStrictEqual(must(await api.post({ action: 'list', key: password }), 'list after delete').claims, []);
+  say('everything works with the password');
+}
+
+module.exports = { runProtocol, runAuth };

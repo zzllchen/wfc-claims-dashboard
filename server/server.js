@@ -73,12 +73,14 @@ function makeStore(dataDir) {
 }
 
 /* ---------- the actions (same names and answers as the Google version) ---------- */
-function makeApi(dataDir) {
+function makeApi(dataDir, opts) {
   const db = makeStore(dataDir);
   const now = () => new Date().toISOString();
+  const password = String((opts && opts.password) || '');         // empty = open, as in the demo
+  const OPEN = ['ping', 'submit', 'upload', 'finish'];             // what the Claim Builder does: never needs the password
 
   const actions = {
-    ping() { return { ok: true, service: 'wfc-claims', version: 1, where: 'local' }; },
+    ping() { return { ok: true, service: 'wfc-claims', version: 1, where: 'local', auth: !!password }; },
 
     list() {
       const claims = db.all().map(publicClaim).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -173,9 +175,14 @@ function makeApi(dataDir) {
   /* method + query string + parsed JSON body -> answer object */
   return function handle(method, query, body) {
     try {
-      const action = method === 'POST' ? (body && body.action) : query.action;
-      if (!actions[action] || (method === 'GET' && !['ping', 'list', 'file'].includes(action)) || (method === 'POST' && ['ping', 'list', 'file'].includes(action))) throw fail('Unknown action.');
-      return actions[action](method === 'POST' ? body : query);
+      const params = method === 'POST' ? (body || {}) : query;
+      const action = params.action;
+      if (!actions[action] || (method === 'GET' && !['ping', 'list', 'file'].includes(action))) throw fail('Unknown action.');     // a read may come by GET or POST; a change only by POST
+      if (password && !OPEN.includes(action)) {
+        const a = Buffer.from(String(params.key || '')), b = Buffer.from(password);
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw fail('Password needed.', 401);
+      }
+      return actions[action](params);
     } catch (e) {
       if (!e.userMessage) console.error(e);
       return { ok: false, error: e.userMessage || 'Something went wrong on the server.', code: e.code || 500 };
@@ -187,8 +194,8 @@ function makeApi(dataDir) {
 const PUBLIC_DIRS = ['css', 'js', 'vendor', 'assets'];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 
-function start({ port = 8787, dataDir = path.join(SITE, 'data'), quiet = false, host } = {}) {
-  const handle = makeApi(dataDir);
+function start({ port = 8787, dataDir = path.join(SITE, 'data'), quiet = false, host, password = process.env.WFC_DASH_PASSWORD || '' } = {}) {
+  const handle = makeApi(dataDir, { password });
   const server = http.createServer((req, res) => {
     const cors = {
       'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type',
@@ -239,7 +246,7 @@ module.exports = { start, makeApi, cleanClaim, slug };
 
 if (require.main === module) {
   const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
-  start({ port: +arg('--port', 8787), dataDir: arg('--data', path.join(SITE, 'data')) }).catch((e) => {
+  start({ port: +arg('--port', 8787), dataDir: arg('--data', path.join(SITE, 'data')), password: arg('--password', process.env.WFC_DASH_PASSWORD || '') }).catch((e) => {
     console.error(e.code === 'EADDRINUSE' ? 'That port is already in use - is WFC Claims already running? Try http://localhost:8787/' : e);
     process.exit(1);
   });

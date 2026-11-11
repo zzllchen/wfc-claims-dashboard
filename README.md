@@ -8,7 +8,7 @@ It is a separate site from the Claim Builder. The Claim Builder's **Save my clai
 Claim Builder  --(Save my claim)-->  inbox  <--(reads)--  this dashboard
 ```
 
-**There is no login yet, on purpose, for the demo.** Anyone who has the inbox address or the page link can read the claims. Add a login before real claims go through it (see "Before real use").
+**Password.** The online inbox can have one shared password (see "The password" below). With none set, anyone who has the inbox address or the page link can read the claims. The local demo has none.
 
 ## The demo (one PC, needs Node.js and Python, nothing else)
 
@@ -40,10 +40,17 @@ If you ever change `Code.gs`: **Deploy > Manage deployments > Edit (pencil) > Ve
 
 Limits: about 8 MB per file (the Claim Builder leaves out a bigger file and says so; it is still in the emailed zip) and 60 lines per claim. A claim with a few receipts takes a few seconds to arrive because each file is sent separately.
 
-## Before real use
+## The password
 
-- **Add a login.** At the moment the page and the inbox are open to anyone who has the address. Claims hold names, amounts and receipt photos. A shared password in the inbox, or Google sign-in limited to the accountant and the boss, are the usual ways; both fit this design.
-- Staff names and amounts are visible to everyone who opens the page, so do not publish the address widely.
+One shared password protects reading claims, opening files, changing a status and deleting. The Claim Builder's own calls (a colleague pressing **Save my claim**) never need it, so colleagues are not affected.
+
+- **Where it lives:** in the Google script's private settings, never in this code or on GitHub. Open the script, **Project settings** (the cog), **Script properties**, **Add script property**: name `DASH_KEY`, value the password. Remove the property to open the inbox again. Changing it signs everyone out: the dashboard asks again.
+- **Dashboard:** asks for it once per browser and remembers it there (**Sign out** in the top bar forgets it). It is sent only to the inbox, in the body of a request, never in an address.
+- **Local demo:** `node server/server.js --password <word>` (or the environment variable `WFC_DASH_PASSWORD`) does the same locally; `Start Demo.bat` sets none.
+- **Honest limits:** it is a shared password, not one per person, and there is no lock-out after wrong guesses (each wrong guess just waits 1.5 seconds). Choose a long one (three or four words). Anyone can still send junk claims to the inbox, because colleagues need it open, but cannot read anything.
+
+## Before real use
+- Everyone who knows the password sees every claim, so share it only with the accountant and the boss.
 - The inbox trusts what the Claim Builder sends but adds up the totals itself, caps text lengths and refuses odd file names. It has no rate limit.
 
 ## How it works
@@ -52,6 +59,7 @@ Limits: about 8 MB per file (the Claim Builder leaves out a bigger file and says
 |---|---|
 | `GET ?action=list` | all finished claims (lines, status, notes, history, the list of files) |
 | `GET ?action=file&id=&file=` | one file, base64 |
+| `POST list` / `POST file` | the same two reads, with the password (`key`) in the body; needed once a password is set |
 | `POST submit` | the claim's details; returns a one-time upload token |
 | `POST upload` | one file (base64) for that token |
 | `POST finish` | makes the claim appear on the dashboard (so nobody sees a half-sent claim) |

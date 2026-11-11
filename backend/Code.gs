@@ -39,13 +39,15 @@ function out_(obj) {
 function route_(method, query, body) {
   var lock = null;
   try {
-    var action = method === 'POST' ? (body && body.action) : query.action;
-    var reads = { ping: 1, list: 1, file: 1 };
+    var params = method === 'POST' ? (body || {}) : query;
+    var action = params.action;
+    var reads = { ping: 1, list: 1, file: 1 };                 // a read may come by GET or POST; a change only by POST
     var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_ };
-    if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action]) || (method === 'POST' && reads[action])) throw fail_('Unknown action.');
+    if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action])) throw fail_('Unknown action.');
+    needKey_(action, params);
     // changes to a claim's record are one at a time; uploads of different files can run side by side
     if (action === 'submit' || action === 'finish' || action === 'status' || action === 'delete') { lock = LockService.getScriptLock(); lock.waitLock(30000); }
-    return known[action](method === 'POST' ? body : query);
+    return known[action](params);
   } catch (e) {
     if (!e.userMessage) console.error(e && e.stack || e);
     return { ok: false, error: e.userMessage || 'Something went wrong on the server.', code: e.code || 500 };
@@ -55,6 +57,17 @@ function route_(method, query, body) {
 }
 
 function fail_(message, code) { var e = new Error(message); e.userMessage = message; e.code = code || 400; return e; }
+
+/* The password (script property DASH_KEY, set in Project settings > Script properties; never in this code). With none set the inbox is open.
+   The Claim Builder's own calls (ping, submit, upload, finish) never need it; reading claims, opening files, changing a status and deleting do. */
+var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1 };
+function passwordSet_() { return !!PropertiesService.getScriptProperties().getProperty('DASH_KEY'); }
+function needKey_(action, params) {
+  if (OPEN_ACTIONS[action]) return;
+  var key = PropertiesService.getScriptProperties().getProperty('DASH_KEY');
+  if (!key) return;
+  if (String(params.key || '') !== key) { Utilities.sleep(1500); throw fail_('Password needed.', 401); }      // the pause makes guessing slow
+}
 
 /* ---------- small helpers (same as server.js) ---------- */
 function round2_(n) { return Math.round((n + 1e-9) * 100) / 100; }
@@ -149,7 +162,7 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google' }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_() }; }
 
 function list_() {
   var db = open_(), last = db.sheet.getLastRow(), claims = [];
