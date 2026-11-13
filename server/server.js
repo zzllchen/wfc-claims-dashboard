@@ -77,10 +77,12 @@ function makeApi(dataDir, opts) {
   const db = makeStore(dataDir);
   const now = () => new Date().toISOString();
   const password = String((opts && opts.password) || '');         // empty = open, as in the demo
-  const OPEN = ['ping', 'submit', 'upload', 'finish'];             // what the Claim Builder does: never needs the password
+  const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude'];             // what the Claim Builder does: never needs the password
 
   const actions = {
-    ping() { return { ok: true, service: 'wfc-claims', version: 1, where: 'local', auth: !!password }; },
+    ping() { return { ok: true, service: 'wfc-claims', version: 1, where: 'local', auth: !!password, claude: false }; },
+
+    claude() { throw fail('Claude is not set up on the local inbox.', 503); },       // only the Google inbox has the relay
 
     list() {
       const claims = db.all().map(publicClaim).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));

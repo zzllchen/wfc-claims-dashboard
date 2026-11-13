@@ -42,7 +42,7 @@ function route_(method, query, body) {
     var params = method === 'POST' ? (body || {}) : query;
     var action = params.action;
     var reads = { ping: 1, list: 1, file: 1 };                 // a read may come by GET or POST; a change only by POST
-    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_ };
+    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_ };
     if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action])) throw fail_('Unknown action.');
     needKey_(action, params);
     // changes to a claim's record are one at a time; uploads of different files can run side by side
@@ -60,7 +60,7 @@ function fail_(message, code) { var e = new Error(message); e.userMessage = mess
 
 /* The password (script property DASH_KEY, set in Project settings > Script properties; never in this code). With none set the inbox is open.
    The Claim Builder's own calls (ping, submit, upload, finish) never need it; reading claims, opening files, changing a status and deleting do. */
-var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1 };
+var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1, claude: 1 };
 function passwordSet_() { return !!PropertiesService.getScriptProperties().getProperty('DASH_KEY'); }
 function needKey_(action, params) {
   if (OPEN_ACTIONS[action]) return;
@@ -162,7 +162,71 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_() }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_() }; }
+
+/* ---------- Claude relay: the Claim Builder asks here to read a receipt photo, so nobody pastes a key ----------
+   The Anthropic key lives only in the script properties (CLAUDE_KEY), never in a web page. Whatever the page asks for, the model is fixed here,
+   the answer length is capped, only one JPEG photo and a short note are accepted, and the whole team shares a daily cap, so even if the address
+   leaks it cannot run up a bill. (Also set a monthly spend limit on the key in the Anthropic Console.) */
+var CLAUDE_URL = 'https://api.anthropic.com/v1/messages';
+var CLAUDE_MODEL = 'claude-sonnet-5-5';              // script property CLAUDE_MODEL changes it
+var CLAUDE_MAX_TOKENS = 1000;
+var CLAUDE_DAILY_CAP = 300;                          // calls a day for the whole team; script property CLAUDE_DAILY_CAP changes it
+var CLAUDE_MAX_CHARS = 2400000;                      // the photo as base64, about 1.8 MB
+
+function claudeOn_() { return !!PropertiesService.getScriptProperties().getProperty('CLAUDE_KEY'); }
+
+function claudeCount_() {
+  var props = PropertiesService.getScriptProperties();
+  var cap = parseInt(props.getProperty('CLAUDE_DAILY_CAP'), 10) || CLAUDE_DAILY_CAP;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var today = new Date().toISOString().slice(0, 10), cur = String(props.getProperty('CLAUDE_DAY') || '').split(':');
+    var n = cur[0] === today ? (parseInt(cur[1], 10) || 0) : 0;
+    if (n >= cap) throw fail_("The company's Claude limit for today is used up.", 429);
+    props.setProperty('CLAUDE_DAY', today + ':' + (n + 1));
+  } finally { try { lock.releaseLock(); } catch (e) { /* already released */ } }
+}
+
+function callClaude_(payload, effort, key) {
+  var p = JSON.parse(JSON.stringify(payload));
+  if (effort) p.output_config = effort;
+  var res = UrlFetchApp.fetch(CLAUDE_URL, { method: 'post', contentType: 'application/json', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, payload: JSON.stringify(p), muteHttpExceptions: true });
+  var code = res.getResponseCode(), text = res.getContentText(), j = null;
+  try { j = JSON.parse(text); } catch (e) { j = null; }
+  if (code === 400 && effort && /effort|output_config/i.test(text)) return callClaude_(payload, null, key);       // a model that does not take the effort setting
+  return { code: code, text: text, json: j };
+}
+
+function claude_(b) {
+  var props = PropertiesService.getScriptProperties(), key = props.getProperty('CLAUDE_KEY');
+  if (!key) throw fail_('Claude is not set up on the inbox.', 503);
+  var r = (b && b.request) || {}, m = r.messages;
+  if (!(m instanceof Array) || m.length !== 1 || !m[0] || m[0].role !== 'user' || !(m[0].content instanceof Array)) throw fail_('Bad request.');
+  var images = 0, texts = 0, chars = 0;
+  m[0].content.forEach(function (c) {
+    if (c && c.type === 'image' && c.source && c.source.type === 'base64' && c.source.media_type === 'image/jpeg' && typeof c.source.data === 'string') { images++; chars += c.source.data.length; }
+    else if (c && c.type === 'text' && typeof c.text === 'string' && c.text.length <= 600) { texts++; chars += c.text.length; }
+    else throw fail_('Bad request.');
+  });
+  if (images !== 1 || texts > 1) throw fail_('Bad request.');
+  if (chars > CLAUDE_MAX_CHARS) throw fail_('That photo is too big.', 413);
+  if (r.system != null && (typeof r.system !== 'string' || r.system.length > 6000)) throw fail_('Bad request.');
+  claudeCount_();
+  var payload = { model: props.getProperty('CLAUDE_MODEL') || CLAUDE_MODEL, max_tokens: Math.min(parseInt(r.max_tokens, 10) || CLAUDE_MAX_TOKENS, CLAUDE_MAX_TOKENS), messages: m };
+  if (r.system) payload.system = r.system;
+  var effort = r.output_config && /^(low|medium|high)$/.test(String(r.output_config.effort)) ? { effort: r.output_config.effort } : null;
+  var res = callClaude_(payload, effort, key);
+  if (res.code !== 200 || !res.json) {
+    // our own words, never Anthropic's text: nothing about the key can leak through an error
+    if (res.code === 401 || res.code === 403) throw fail_('The company Claude key was not accepted. Tell whoever looks after the inbox.', 502);
+    if (res.code === 429 || /credit|billing|balance/i.test(res.text)) throw fail_('Claude is busy, or the company account has no credit left.', 502);
+    throw fail_('Claude could not read that photo (HTTP ' + res.code + ').', 502);
+  }
+  var j = res.json;
+  return { ok: true, reply: { content: j.content, stop_reason: j.stop_reason, usage: j.usage, model: j.model } };
+}
 
 function list_() {
   var db = open_(), last = db.sheet.getLastRow(), claims = [];

@@ -67,6 +67,17 @@ One shared password protects reading claims, opening files, changing a status an
 
 One claim per person per month (`2026-10_chin-zhi-liang`); saving again replaces it and keeps the history. While a new version is uploading, the dashboard keeps showing the old one. The same calls are answered by `server/server.js` (local) and `backend/Code.gs` (Google); `tests/protocol.js` runs one scenario against both.
 
+
+## Claude through the company (optional)
+
+The Claim Builder can read receipt photos with Claude without anyone pasting a key. The Anthropic key lives only in this Google script (script property CLAUDE_KEY), never in a web page or on GitHub. The Claim Builder asks the inbox (ction: claude), and the inbox adds the key, fixes the model (Sonnet 5.5, or script property CLAUDE_MODEL), caps the answer at 1000 tokens, accepts only one JPEG photo and a short note, and stops at a daily limit for the whole team (300 calls, or script property CLAUDE_DAILY_CAP). Errors are in our words and never carry the key.
+
+- **Turn it on:** Project settings, Script properties, add CLAUDE_KEY = the Anthropic key. Then Deploy, Manage deployments, edit, New version. Also set a monthly spend limit on the key in the Anthropic Console.
+- **Turn it off:** delete the CLAUDE_KEY property. The Claim Builder then reads photos on the computer, as before.
+- **Not password-gated:** colleagues have no dashboard password, so the relay is open like submitting a claim; the daily limit and the spend limit are what protect the credit.
+- A person who pastes their own key in the Claim Builder still uses that instead.
+- Cost: about RM 0.03 per photo.
+
 ## Files
 
 ```
