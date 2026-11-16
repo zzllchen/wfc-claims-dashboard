@@ -1,14 +1,30 @@
-# WFC Claims (the accountant's dashboard)
+# WFC Claims & Leave (the accountant's dashboard)
 
-A page where the accountant sees every claim in one clean table: who sent it, the month, the total, and a status she can change (New, Checked, Paid, Has a question). Click a claim to see its lines, open the receipts, download everything as a zip, and read the history. It also shows spend by type and exports to Excel (CSV).
+A page with two tabs, **Claims** and **Leave**, on the same site and behind the same password.
 
-It is a separate site from the Claim Builder. The Claim Builder's **Save my claim** also posts each claim to a small **inbox**, and this page reads the inbox. The email with the zip still goes out as before.
+- **Claims:** every claim in one clean table: who sent it, the month, the total, and a status the accountant can change (New, Checked, Paid, Has a question). Click a claim to see its lines, open the receipts, download everything as a zip, and read the history. It also shows spend by type and exports to Excel (CSV).
+- **Leave:** every leave application, to track who is away and how much leave has been taken (see "The Leave tab" below).
+
+It is a separate site from the Claim Builder. The Claim Builder's **Save my claim** and **Save my leave form** also post to a small **inbox**, and this page reads the inbox. The email with the zip still goes out as before.
 
 ```
 Claim Builder  --(Save my claim)-->  inbox  <--(reads)--  this dashboard
 ```
 
 **Password.** The online inbox can have one shared password (see "The password" below). With none set, anyone who has the inbox address or the page link can read the claims. The local demo has none.
+
+## The Leave tab
+
+Press **Leave** (the number beside it is how many applications are still New). A link ending in `#leave` opens straight on it.
+
+- **Four tiles:** New, Recorded and Has a question (click one to filter the table, click again to show all) and **Away today** (who is on leave right now).
+- **The table:** staff, type (a small **MC** tag when a medical certificate came with it), dates (with *Away now* or *Starts in 9 days* underneath), working days, when it was sent, and status. Filter by month (the month the leave starts in), staff or a search word; click a heading to sort.
+- **Who is away** (the card beside the table, about the whole team, so the filters do not change it): who is away today, who is coming up in the next 30 days, and the **days taken this year** per person with the split by type (annual, sick, personal, unpaid).
+- **Click an application** for the side panel: the days and dates, a status you can set (**New**, **Recorded** once the office has filled in the balance, **Has a question**) with a note, the details (type, from, to, days, reason, date signed, MC attached or not), **Open leave form** and **Download everything (.zip)**, the files (leave form PDF and Excel, medical certificate), who it was sent to, and the history.
+- **Export > Leave list** gives one row per application for Excel.
+- **Days** are working days: Monday to Friday, without the public holidays in the Claim Builder's list (the Claim Builder works it out and sends it).
+- One application per person per start date: saving the same leave form again replaces it (and sets it back to New, history kept). Changing the start date and saving makes a second application.
+- **Show sample claims** on the Claims tab fills both tabs with made-up examples, dated around today.
 
 ## The demo (one PC, needs Node.js and Python, nothing else)
 
@@ -36,7 +52,7 @@ The inbox runs for free as a Google Apps Script web app in a Google account (use
    - `js/config.js` in this folder (`api: '...'`), then host this folder as a static site (GitHub Pages, Netlify, any web server).
    - `DEFAULTS.dashApi` in the Claim Builder's `js/app.js`, so every colleague sends to it without touching Settings.
 
-If you ever change `Code.gs`: **Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy**. The address stays the same.
+If you ever change `Code.gs`: **Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy**. The address stays the same. **Leave tracking (version 2 of the script) needs this once:** paste the new `Code.gs` over the old one and deploy a New version. Until then the dashboard's Leave tab says "This inbox can't track leave yet" and the Claim Builder says its leave form was saved and emailed but not sent to the dashboard (claims are not affected either way).
 
 Limits: about 8 MB per file (the Claim Builder leaves out a bigger file and says so; it is still in the emailed zip) and 60 lines per claim. A claim with a few receipts takes a few seconds to arrive because each file is sent separately.
 
@@ -57,15 +73,15 @@ One shared password protects reading claims, opening files, changing a status an
 
 | Call | What it does |
 |---|---|
-| `GET ?action=list` | all finished claims (lines, status, notes, history, the list of files) |
+| `GET ?action=list` | all finished claims (lines, status, notes, history, the list of files) as `claims`, and all leave applications as `leave` (a dashboard that only knows claims ignores `leave`) |
 | `GET ?action=file&id=&file=` | one file, base64 |
 | `POST list` / `POST file` | the same two reads, with the password (`key`) in the body; needed once a password is set |
-| `POST submit` | the claim's details; returns a one-time upload token |
+| `POST submit` | the claim's details (`claim`), or a leave application's (`leave`: `claimant`, `type`, `start`, `end`, `days`, `reason`, `signedOn`, `from`, `to`, `subject`); returns a one-time upload token |
 | `POST upload` | one file (base64) for that token |
 | `POST finish` | makes the claim appear on the dashboard (so nobody sees a half-sent claim) |
-| `POST status` | status and/or note, with a history line |
+| `POST status` | status and/or note, with a history line (a claim: new, checked, paid, question; a leave application: new, recorded, question) |
 
-One claim per person per month (`2026-10_chin-zhi-liang`); saving again replaces it and keeps the history. While a new version is uploading, the dashboard keeps showing the old one. The same calls are answered by `server/server.js` (local) and `backend/Code.gs` (Google); `tests/protocol.js` runs one scenario against both.
+One claim per person per month (`2026-10_chin-zhi-liang`) and one leave application per person per start date (`leave-2026-11-05_chin-zhi-liang`); saving again replaces it and keeps the history. On Google, claims are on the sheet *Claims* and leave on a sheet *Leave* of the same spreadsheet (made when the first leave arrives); locally each application is a folder under `data`. `ping` says `leave: true` when the inbox understands leave, so the Claim Builder and the dashboard can tell an older inbox. While a new version is uploading, the dashboard keeps showing the old one. The same calls are answered by `server/server.js` (local) and `backend/Code.gs` (Google); `tests/protocol.js` runs one scenario against both.
 
 
 ## Claude through the company (optional)

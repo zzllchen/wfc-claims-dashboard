@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { runProtocol, runAuth } = require('./protocol');
+const { runProtocol, runAuth, runLeave } = require('./protocol');
 
 function fakeGoogle() {
   const props = {};
@@ -20,7 +20,7 @@ function fakeGoogle() {
     let hidden = [];
     const sheet = {
       rows, _hidden: () => hidden,
-      setName() { return sheet; }, setFrozenRows() { return sheet; }, hideColumns(c) { hidden.push(c); return sheet; },
+      setName(n) { sheet._name = n; return sheet; }, setFrozenRows() { return sheet; }, hideColumns(c) { hidden.push(c); return sheet; },
       getLastRow() { let l = 0; rows.forEach((r, i) => { if (r && r.some((v) => v !== '' && v != null)) l = i + 1; }); return l; },
       getRange(r, c, nr = 1, nc = 1) {
         const rg = {
@@ -60,6 +60,12 @@ function fakeGoogle() {
     getDateCreated: () => rec.created, getBlob: () => ({ getBytes: () => rec.bytes }),
   });
 
+  // a spreadsheet can have several sheets (the inbox keeps claims on "Claims" and leave on "Leave")
+  const book = (id, x) => ({
+    getId: () => id, getSheets: () => x.list.slice(),
+    getSheetByName: (nm) => x.list.find((sh) => (sh._name || x.names.get(sh)) === nm) || null,
+    insertSheet(nm, at) { const sh = makeSheet(); x.names.set(sh, nm); sh._name = nm; x.list.splice(at == null ? x.list.length : at, 0, sh); return sh; },
+  });
   const fetches = [];
   let responder = null;
   const OK_BODY = JSON.stringify({ content: [{ type: 'text', text: '{"isReceipt":true,"amount":60}' }], stop_reason: 'end_turn', usage: { input_tokens: 1500, output_tokens: 80 }, model: 'claude-sonnet-5-5', id: 'msg_x' });
@@ -82,8 +88,8 @@ function fakeGoogle() {
       sleep: () => {},
     },
     SpreadsheetApp: {
-      create(name) { const id = nextId('sheet'); const s = makeSheet(); sheets.set(id, { name, sheet: s }); return { getId: () => id, getSheets: () => [s] }; },
-      openById(id) { const x = sheets.get(id); if (!x) throw new Error('no sheet'); return { getId: () => id, getSheets: () => [x.sheet] }; },
+      create(name) { const id = nextId('sheet'); const first = makeSheet(); const x = { name, list: [first], names: new Map([[first, 'Sheet1']]) }; sheets.set(id, x); return book(id, x); },
+      openById(id) { const x = sheets.get(id); if (!x) throw new Error('no sheet'); return book(id, x); },
     },
     DriveApp: {
       createFolder: (name) => makeFolder(name),
@@ -105,6 +111,7 @@ function fakeGoogle() {
     async post(b) { return JSON.parse(sandbox.doPost({ parameter: {}, postData: { contents: JSON.stringify(b) } }).getContent()); },
   };
   await runProtocol(api, (s) => console.log('  ok  ' + s));
+  await runLeave(api, (s) => console.log('  ok  ' + s));
 
   // things only the Google version has
   assert.ok(fake.props.SHEET_ID && fake.props.FOLDER_ID, 'the sheet and the folder were created on first use');
@@ -112,6 +119,8 @@ function fakeGoogle() {
   assert.ok(trashed >= 3, 'replaced and deleted claims go to the Drive bin (got ' + trashed + ')');
   const bad = JSON.parse(sandbox.doPost({ parameter: {}, postData: { contents: 'nope' } }).getContent());
   assert.strictEqual(bad.ok, false);
+  const book1 = fake.sheets.get(fake.props.SHEET_ID);
+  assert.deepStrictEqual(book1.list.map((sh) => sh._name || book1.names.get(sh)), ['Claims', 'Leave'], 'claims and leave each have their own sheet');
   console.log('  ok  sheet + folder made on first use, old versions go to the bin');
 
   // the same inbox once the password (script property DASH_KEY) is set

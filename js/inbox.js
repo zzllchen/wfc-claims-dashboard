@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
   const KEY = 'wfc-dash-api', PW = 'wfc-dash-key';
-  let base = '', needsKey = false;
+  let base = '', needsKey = false, leaveOk = false;
 
   const withQuery = (api, params) => api + (api.includes('?') ? '&' : '?') + new URLSearchParams(params);
   const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
@@ -44,7 +44,7 @@
       .map((x) => String(x || '').trim()).filter((x, i, a) => x && a.indexOf(x) === i);
     for (const api of list) {
       base = api;
-      try { const j = await get({ action: 'ping' }, 20000); needsKey = !!j.auth; return api; } catch (e) { /* try the next */ }
+      try { const j = await get({ action: 'ping' }, 20000); needsKey = !!j.auth; leaveOk = !!j.leave; return api; } catch (e) { /* try the next */ }
     }
     base = '';
     return '';
@@ -55,10 +55,12 @@
     forget() { lsSet(KEY, ''); },
     address: () => base,
     get needsKey() { return needsKey; },
+    get leaveOk() { return leaveOk; },       // false for an older inbox that only knows claims
     hasKey: () => !!lsGet(PW),
     setKey(pw) { lsSet(PW, String(pw || '')); },
     clearKey() { lsSet(PW, ''); },
-    async list() { return (await read({ action: 'list' })).claims; },
+    /* { claims, leave }: leave applications come in their own list (an older inbox has none) */
+    async list() { const r = await read({ action: 'list' }); return { claims: r.claims || [], leave: r.leave || [] }; },
     async file(id, file) { return read({ action: 'file', id, file }); },
     async setStatus(id, status, note) { return (await post({ action: 'status', id, status, note, key: lsGet(PW) })).claim; },
   };

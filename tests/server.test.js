@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { start } = require('../server/server');
-const { runProtocol, runAuth } = require('./protocol');
+const { runProtocol, runAuth, runLeave } = require('./protocol');
 
 (async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wfc-claims-test-'));
@@ -16,6 +16,7 @@ const { runProtocol, runAuth } = require('./protocol');
       async post(b) { const r = await fetch(srv.url + '/api', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(b) }); return r.json(); },
     };
     await runProtocol(api, (s) => console.log('  ok  ' + s));
+    await runLeave(api, (s) => console.log('  ok  ' + s));
 
     // the browser rules: any site may call it, including the pre-flight check
     const pre = await fetch(srv.url + '/api', { method: 'OPTIONS', headers: { Origin: 'https://zzllchen.github.io', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Private-Network': 'true' } });

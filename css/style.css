@@ -275,3 +275,49 @@ dialog::backdrop { background: rgba(13, 27, 62, .5); }
 .lockerr { min-height: 20px; color: var(--bad) !important; font-weight: 600; font-size: 14px; }
 .topbtns .quiet { background: transparent; border: 1px solid transparent; color: var(--muted); }
 .topbtns .quiet:hover { background: var(--blue-50); color: var(--blue); }
+
+/* the two tabs: Claims and Leave */
+.tabs { display: flex; gap: 28px; border-bottom: 1px solid var(--line); margin: -6px 0 2px; }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; padding: 12px 2px; color: var(--muted); font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--blue); border-bottom-color: var(--blue); }
+.cnt { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--blue-100); color: var(--blue); font-size: 12px; font-weight: 700; }
+.view { display: grid; gap: 20px; }
+
+/* leave: its own status colour, the "away today" tile, and the little drawings per type */
+.s-recorded { --sc: var(--ok); --sb: var(--ok-bg); }
+.s-away { --sc: var(--teal); }
+.tile.info { cursor: default; }
+.tile.info:hover { background: #fff; border-color: var(--line); }
+.tile .ta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-annual { --kb: #e5edff; --kc: #1f4ad8; }
+.k-sick { --kb: #ffe9e7; --kc: #c2362a; }
+.k-unpaid { --kb: #fff1de; --kc: #b45309; }
+.k-personal { --kb: #f1e8ff; --kc: #7c3aed; }
+.k-leaveother { --kb: #eef1f8; --kc: #5d6b8c; }
+.tcell { display: flex; align-items: center; gap: 10px; }
+.tag.mc { background: #ffe9e7; color: #c2362a; }
+td .sub.now { color: var(--ok); font-weight: 600; }
+td .sub.soon { color: var(--blue); }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
+
+/* the card beside the leave table */
+.away { padding: 20px 22px; display: grid; gap: 24px; position: sticky; top: 80px; }
+.away h2 { margin: 0; font-size: 15px; font-weight: 650; }
+.away .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.away h3 { margin: 0 0 8px; font-size: 12px; font-weight: 650; color: var(--muted); letter-spacing: .03em; text-transform: uppercase; }
+.away .none { color: var(--muted); font-size: 13.5px; }
+.awlist { display: grid; }
+.awrow { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 9px 0; font-weight: 400; color: inherit; }
+.awrow:first-child { border-top: 0; }
+.awrow:hover { background: var(--blue-50); }
+.awrow .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.awrow .dt { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.awrow .dd { color: var(--muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.away .more { color: var(--muted); font-size: 13px; padding-top: 8px; border-top: 1px solid var(--line); }
+.bar .bsub { color: var(--faint); font-size: 12.5px; margin-top: 5px; }
+@media (max-width: 1100px) { .away { position: static; } }
+@media (max-width: 640px) { .tabs { gap: 22px; } }
+
+.unit { display: none; }
+@media (max-width: 640px) { .unit { display: inline; font-weight: 500; color: var(--muted); } }

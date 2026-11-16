@@ -5,6 +5,7 @@
   const pad = (n) => String(n).padStart(2, '0');
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const SHORT = MONTHS.map((m) => m.slice(0, 3));
+  const LK = window.LeaveKit;       // dates and sums for leave (js/leave.js)
 
   function h(tag, props, ...kids) {
     const e = document.createElement(tag);
@@ -36,13 +37,19 @@
     if (s < 86400 * 14) return `${Math.floor(s / 86400)} days ago`;
     return `${d.getDate()} ${SHORT[d.getMonth()]}`;
   }
+  const niceDay = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    if (!m) return '';
+    return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()]} ${+m[3]} ${SHORT[+m[2] - 1]} ${m[1]}`;
+  };
   const sizeText = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
   const safe = (s) => String(s).replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim();
 
   /* ---------- statuses ---------- */
-  const STATUS = { new: 'New', checked: 'Checked', paid: 'Paid', question: 'Has a question' };
-  const STATUS_KEYS = ['new', 'checked', 'paid', 'question'];
-  const STATUS_RANK = ['new', 'question', 'checked', 'paid'];
+  const STATUS = { new: 'New', checked: 'Checked', paid: 'Paid', recorded: 'Recorded', question: 'Has a question' };
+  const STATUS_KEYS = ['new', 'checked', 'paid', 'question'];                // a claim
+  const LEAVE_STATUS_KEYS = ['new', 'recorded', 'question'];                 // a leave application: recorded = the office has filled in the balance
+  const STATUS_RANK = ['new', 'question', 'checked', 'recorded', 'paid'];
 
   /* ---------- kinds of claim: one small drawing each ---------- */
   const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
@@ -57,7 +64,12 @@
     stationery: svg('<path d="M4 20l1-5L16 4a2.1 2.1 0 0 1 3 3L8 18z"/><path d="M14 6l3 3"/>'),
     other: svg('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>'),
     file: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
+    annual: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+    unpaid: svg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M16 14.5h2"/>'),
+    personal: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>'),
+    leaveother: svg('<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>'),
   };
+  ICON.sick = ICON.medical;
   const KIND_LABEL = { fuel: 'Petrol', toll: 'Toll', parking: 'Parking', medical: 'Medical', ai: 'AI tools', stay: 'Accommodation', meals: 'Meals', stationery: 'Stationery', other: 'Other' };
   const kindOf = (cat) => {
     const c = String(cat || '');
@@ -69,12 +81,13 @@
 
   /* ---------- state ---------- */
   const S = {
-    real: [], sampleList: [], sample: false, address: '', connected: false, firstLoad: true, loading: false, error: '', loadedAt: null,
+    real: [], sampleList: [], realLeave: [], sampleLeave: [], view: 'claims', sample: false, address: '', connected: false, firstLoad: true, loading: false, error: '', loadedAt: null,
     f: { month: 'all', staff: 'all', status: 'all', q: '' }, sort: { key: 'updatedAt', dir: -1 },
+    lf: { month: 'all', staff: 'all', status: 'all', q: '' }, lsort: { key: 'start', dir: -1 },        // the same, for the Leave tab
     open: null, prev: null, fresh: new Set(), saving: 0, blobs: new Map(), lastFocus: null, drawerSig: '', draft: { id: '', text: null },
   };
   const all = () => (S.sample ? S.sampleList : S.real);
-  const find = (id) => all().find((c) => c.id === id);
+  const find = (id) => all().find((c) => c.id === id) || (S.sample ? S.sampleLeave : S.realLeave).find((c) => c.id === id);
 
   function matchesQuery(c, q) {
     if (!q) return true;
@@ -99,12 +112,12 @@
       if (!S.address) S.address = await Inbox.connect();
       if (!S.address) { S.connected = false; S.error = ''; return; }
       if (Inbox.needsKey && !Inbox.hasKey()) { showLock(''); return; }          // a password is set and this browser does not have it yet
-      const claims = await Inbox.list();
+      const got = await Inbox.list();
       hideLock();
       S.connected = true; S.error = ''; S.loadedAt = new Date();
-      if (!S.saving) applyClaims(claims);
+      if (!S.saving) applyClaims(got.claims, got.leave);
     } catch (e) {
-      if (e && e.code === 401) { Inbox.clearKey(); S.real = []; S.prev = null; showLock(S.askedPw ? "That password isn't right." : ''); return; }
+      if (e && e.code === 401) { Inbox.clearKey(); S.real = []; S.realLeave = []; S.prev = null; showLock(S.askedPw ? "That password isn't right." : ''); return; }
       S.error = (e && e.message) || String(e);
       if (!S.real.length) S.connected = false;
     } finally {
@@ -127,29 +140,52 @@
     if (!S.open) document.body.style.overflow = '';
   }
 
-  function applyClaims(next) {
+  function applyClaims(nextClaims, nextLeave) {
+    const next = nextClaims.concat(nextLeave || []);
     const changed = [];
     if (S.prev) next.forEach((c) => { if (S.prev.get(c.id) !== c.updatedAt) changed.push(c.id); });
     changed.forEach((id) => { S.fresh.add(id); setTimeout(() => { S.fresh.delete(id); }, 6000); });      // each highlight fades on its own timer
     S.prev = new Map(next.map((c) => [c.id, c.updatedAt]));
-    // a claim that did not change stays the very same object, so the open panel never holds on to an outdated copy
-    const old = new Map(S.real.map((c) => [c.id, c]));
-    S.real = next.map((n) => { const o = old.get(n.id); return o && sigOf(o) === sigOf(n) ? o : n; });
+    // an item that did not change stays the very same object, so the open panel never holds on to an outdated copy
+    const keep = (oldList, list) => { const old = new Map(oldList.map((c) => [c.id, c])); return list.map((n) => { const o = old.get(n.id); return o && sigOf(o) === sigOf(n) ? o : n; }); };
+    S.real = keep(S.real, nextClaims); S.realLeave = keep(S.realLeave, nextLeave || []);
     if (changed.length) {
       const first = next.find((c) => c.id === changed[0]);
-      toast(changed.length === 1 ? `${first.claimant} sent a claim for ${first.monthLabel}` : `${changed.length} claims are new or updated`);
+      toast(changed.length > 1 ? `${changed.length} items are new or updated`
+        : first.kind === 'leave' ? `${first.claimant} sent a leave application for ${LK.rangeText(first.start, first.end)}` : `${first.claimant} sent a claim for ${first.monthLabel}`);
     }
   }
 
   /* ---------- drawing the page ---------- */
   function render() {
-    paintTop(); paintBanner(); paintFilters(); paintTiles(); paintTable(); paintSpend();
+    paintTop(); paintTabs(); paintBanner();
+    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintSpend(); }
     if (S.open) {                  // the panel is only redrawn when its claim changed, so a note being typed is not wiped by the 20-second refresh
       const c = find(S.open);
       if (!c) closeDrawer(); else if (S.drawerSig !== sigOf(c)) paintDrawer(true);
     }
   }
   const sigOf = (c) => [c.id, c.version, c.updatedAt, c.status, c.note, (c.history || []).length, S.sample].join('|');
+
+  /* the two tabs, each with how many are still New */
+  function paintTabs() {
+    [['claims', all(), '#cntClaims'], ['leave', leaveAll(), '#cntLeave']].forEach(([v, list, id]) => {
+      const n = list.filter((c) => c.status === 'new').length, el = $(id);
+      el.textContent = String(n); el.hidden = !n;
+    });
+    $('#tabClaims').classList.toggle('on', S.view === 'claims'); $('#tabLeave').classList.toggle('on', S.view === 'leave');
+    $('#tabClaims').setAttribute('aria-selected', String(S.view === 'claims')); $('#tabLeave').setAttribute('aria-selected', String(S.view === 'leave'));
+  }
+
+  function setView(v, keepUrl) {
+    const next = v === 'leave' ? 'leave' : 'claims';
+    if (next !== S.view && S.open) closeDrawer();
+    S.view = next;
+    $('#viewClaims').hidden = next !== 'claims'; $('#viewLeave').hidden = next !== 'leave';
+    document.querySelectorAll('#exportMenu [data-view]').forEach((b) => { b.hidden = b.dataset.view !== next; });
+    if (!keepUrl) { try { history.replaceState(null, '', next === 'leave' ? '#leave' : location.pathname + location.search); } catch (e) { /* not allowed here */ } }
+    render();
+  }
 
   function paintTop() {
     $('#btnLock').hidden = !(Inbox.needsKey && Inbox.hasKey() && !S.locked);
@@ -163,8 +199,8 @@
     const box = $('#banner');
     box.textContent = '';
     if (S.sample) {
-      box.append(h('div', { class: 'banner' }, h('b', { text: 'Sample claims.' }), 'Made-up examples to show how this page looks. None of it is real, and nothing you click here is saved.',
-        h('button', { class: 'link', type: 'button', text: 'Back to real claims', onclick: () => { S.sample = false; S.open = null; closeDrawer(); render(); } })));
+      box.append(h('div', { class: 'banner' }, h('b', { text: 'Sample claims and leave.' }), 'Made-up examples to show how this page looks. None of it is real, and nothing you click here is saved.',
+        h('button', { class: 'link', type: 'button', text: 'Back to real data', onclick: () => { S.sample = false; S.open = null; closeDrawer(); render(); } })));
     } else if (S.error && S.connected) {
       box.append(h('div', { class: 'banner warn' }, `Couldn't refresh (${S.error}). Showing the last list.`, h('button', { class: 'link', type: 'button', text: 'Try again', onclick: () => load() })));
     }
@@ -207,7 +243,7 @@
   function paintTable() {
     const rows = $('#rows'), empty = $('#empty'), scroll = $('#tbl').closest('.scroll');
     const list = all().filter(inView).sort((a, b) => S.sort.dir * (SORTERS[S.sort.key](a, b) || String(a.id).localeCompare(b.id)));
-    document.querySelectorAll('.sort').forEach((b) => { if (b.dataset.sort === S.sort.key) b.dataset.dir = String(S.sort.dir); else delete b.dataset.dir; });
+    document.querySelectorAll('#tbl .sort').forEach((b) => { if (b.dataset.sort === S.sort.key) b.dataset.dir = String(S.sort.dir); else delete b.dataset.dir; });
     rows.textContent = '';
     list.forEach((c) => {
       const open = () => openDrawer(c.id);
@@ -244,7 +280,11 @@
     }
   }
 
-  function showSample() { S.sample = true; S.sampleList = WFC_SAMPLE(); S.f = { month: 'all', staff: 'all', status: 'all', q: '' }; $('#fSearch').value = ''; render(); }
+  function showSample() {
+    S.sample = true; S.sampleList = WFC_SAMPLE(); S.sampleLeave = WFC_SAMPLE_LEAVE();
+    S.f = { month: 'all', staff: 'all', status: 'all', q: '' }; S.lf = { month: 'all', staff: 'all', status: 'all', q: '' };
+    $('#fSearch').value = ''; $('#lSearch').value = ''; render();
+  }
 
   function paintSpend() {
     const box = $('#spend'), list = all().filter(inView);
@@ -264,6 +304,123 @@
     })));
   }
 
+  /* ---------- the Leave tab ---------- */
+  const todayIso = () => LK.localIso(new Date());
+  const leaveAll = () => (S.sample ? S.sampleLeave : S.realLeave);
+  const LEAVE_ICON = { annual: 'annual', sick: 'sick', unpaid: 'unpaid', personal: 'personal', other: 'leaveother' };
+  const leaveIcon = (c, cls) => icon(LEAVE_ICON[LK.typeOf(c)], cls);
+  const shortType = (t) => LK.TYPE_LABEL[t].replace(/ leave$/, '');
+
+  function lMatches(c, q) {
+    if (!q) return true;
+    const hay = [c.claimant, LK.TYPE_LABEL[LK.typeOf(c)], c.reason, c.note, c.from, c.monthLabel, STATUS[c.status]].join(' ').toLowerCase();
+    return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+  }
+  const lInScope = (c) => (S.lf.month === 'all' || c.month === S.lf.month) && (S.lf.staff === 'all' || c.claimant === S.lf.staff) && lMatches(c, S.lf.q.trim());
+  const lInView = (c) => lInScope(c) && (S.lf.status === 'all' || c.status === S.lf.status);
+  const LSORTERS = {
+    claimant: (a, b) => a.claimant.localeCompare(b.claimant),
+    type: (a, b) => LK.TYPE_LABEL[LK.typeOf(a)].localeCompare(LK.TYPE_LABEL[LK.typeOf(b)]),
+    start: (a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
+    days: (a, b) => a.days - b.days,
+    updatedAt: (a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)),
+    status: (a, b) => STATUS_RANK.indexOf(a.status) - STATUS_RANK.indexOf(b.status),
+  };
+
+  function paintLeaveFilters() {
+    const list = leaveAll();
+    const months = Array.from(new Map(list.map((c) => [c.month, c.monthLabel]))).sort((a, b) => b[0].localeCompare(a[0]));
+    const staff = Array.from(new Set(list.map((c) => c.claimant))).sort((a, b) => a.localeCompare(b));
+    if (S.lf.month !== 'all' && !months.some((m) => m[0] === S.lf.month)) S.lf.month = 'all';
+    if (S.lf.staff !== 'all' && !staff.includes(S.lf.staff)) S.lf.staff = 'all';
+    setOptions($('#lMonth'), [['all', 'All months']].concat(months), S.lf.month);
+    setOptions($('#lStaff'), [['all', 'Everyone']].concat(staff.map((s) => [s, s])), S.lf.staff);
+  }
+
+  function paintLeaveTiles() {
+    const box = $('#ltiles'), scoped = leaveAll().filter(lInScope);
+    box.textContent = '';
+    LEAVE_STATUS_KEYS.forEach((k) => {
+      const mine = scoped.filter((c) => c.status === k);
+      const days = mine.reduce((a, c) => a + (Number(c.days) || 0), 0);
+      box.append(h('button', {
+        class: `tile s-${k}`, type: 'button', 'aria-pressed': S.lf.status === k ? 'true' : 'false', title: S.lf.status === k ? 'Click again to show all' : `Show only: ${STATUS[k]}`,
+        onclick: () => { S.lf.status = S.lf.status === k ? 'all' : k; render(); },
+      }, h('span', { class: 'tl' }, h('span', { class: 'dot' }), STATUS[k]), h('span', { class: 'tn', text: String(mine.length) }), h('span', { class: 'ta', text: mine.length ? LK.dayWord(days) : '–' })));
+    });
+    const now = LK.awaySplit(leaveAll(), todayIso(), 30).now;
+    box.append(h('div', { class: 'tile info s-away' }, h('span', { class: 'tl' }, h('span', { class: 'dot' }), 'Away today'), h('span', { class: 'tn', text: String(now.length) }),
+      h('span', { class: 'ta', title: now.map((c) => c.claimant).join(', '), text: now.length ? now.map((c) => c.claimant).join(', ') : 'Nobody' })));
+  }
+
+  function paintLeaveTable() {
+    const rows = $('#lrows'), empty = $('#lempty'), scroll = $('#ltbl').closest('.scroll'), today = todayIso();
+    const list = leaveAll().filter(lInView).sort((a, b) => S.lsort.dir * (LSORTERS[S.lsort.key](a, b) || String(a.id).localeCompare(b.id)));
+    document.querySelectorAll('#ltbl .sort').forEach((b) => { if (b.dataset.lsort === S.lsort.key) b.dataset.dir = String(S.lsort.dir); else delete b.dataset.dir; });
+    rows.textContent = '';
+    list.forEach((c) => {
+      const open = () => openDrawer(c.id);
+      const w = LK.when(c, today, 30), wt = LK.whenText(c, today);
+      rows.append(h('tr', { tabindex: '0', 'data-id': c.id, class: S.fresh.has(c.id) ? 'fresh' : '', onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
+        h('td', {}, h('div', { class: 'who' }, c.claimant, c.sample ? h('span', { class: 'tag', text: 'Sample' }) : null),
+          h('div', { class: 'sub show-sm', text: `${shortType(LK.typeOf(c))} · ${LK.rangeText(c.start, c.end)}${wt ? ' · ' + wt : ''}` })),
+        h('td', { class: 'hide-sm' }, h('div', { class: 'tcell' }, leaveIcon(c), h('span', { text: shortType(LK.typeOf(c)) }), LK.hasMc(c) ? h('span', { class: 'tag mc', title: 'Medical certificate attached', text: 'MC' }) : null)),
+        h('td', { class: 'hide-sm' }, h('div', { text: LK.rangeText(c.start, c.end) }), wt ? h('div', { class: 'sub ' + (w === 'away' ? 'now' : 'soon'), text: wt }) : null),
+        h('td', { class: 'num total' }, String(c.days), h('span', { class: 'unit', text: c.days === 1 ? ' day' : ' days' })),       // the unit shows on a phone, where the column heading is gone
+        h('td', { class: 'hide-sm muted', title: fullWhen(c.updatedAt), text: ago(c.updatedAt) }),
+        h('td', {}, h('span', { class: `pill s-${c.status}`, text: STATUS[c.status] }))));
+    });
+
+    const tf = $('#ltfoot');
+    tf.textContent = '';
+    if (list.length) tf.append(h('span', {}, `${list.length} application${list.length > 1 ? 's' : ''}`), h('span', {}, 'Total ', h('b', { text: LK.dayWord(list.reduce((a, c) => a + (Number(c.days) || 0), 0)) })));
+
+    scroll.hidden = !list.length;
+    empty.hidden = !!list.length;
+    empty.textContent = '';
+    if (list.length) return;
+    const btn = (text, fn, cls) => h('button', { class: cls || 'ghost', type: 'button', text, onclick: fn });
+    if (S.firstLoad) empty.append(h('p', { text: 'Loading leave…' }));
+    else if (!S.sample && !S.connected) {
+      empty.append(h('h3', { text: "Can't find the inbox" }),
+        h('p', { text: 'This page is not connected to where claims and leave are sent yet.' }),
+        h('div', { class: 'row' }, btn('Try again', () => { S.address = ''; load(); }, 'primary'), btn('Show sample leave', showSample)));
+    } else if (!S.sample && !Inbox.leaveOk) {
+      empty.append(h('h3', { text: "This inbox can't track leave yet" }),
+        h('p', { text: 'It needs a small update first. Ask whoever set it up to put the new version in (README, "Put it online").' }));
+    } else if (!leaveAll().length) {
+      empty.append(h('h3', { text: 'No leave applications yet' }), h('p', { text: 'When someone presses Save my leave form in the Claim Builder, it shows up here within a few seconds.' }),
+        S.sample ? null : btn('Show sample leave', showSample));
+    } else {
+      empty.append(h('h3', { text: 'Nothing matches' }), h('p', { text: 'Try a different month, person or search word.' }),
+        btn('Clear filters', () => { S.lf = { month: 'all', staff: 'all', status: 'all', q: '' }; $('#lSearch').value = ''; render(); }));
+    }
+  }
+
+  /* the card beside the table: who is away now, who is coming up, days taken this year. It is about the team, so the filters do not change it. */
+  function paintAway() {
+    const box = $('#away'), list = leaveAll(), today = todayIso(), year = today.slice(0, 4);
+    const { now, soon } = LK.awaySplit(list, today, 30);
+    const row = (c) => h('button', { class: 'awrow', type: 'button', onclick: () => openDrawer(c.id) }, leaveIcon(c),
+      h('div', { style: 'min-width:0' }, h('div', { class: 'nm', text: c.claimant }), h('div', { class: 'dt', text: `${shortType(LK.typeOf(c))} · ${LK.rangeText(c.start, c.end)}` })),
+      h('div', { class: 'dd', text: LK.dayWord(c.days) }));
+    const by = LK.daysByPerson(list, year), max = by.length ? by[0].total : 0;
+    box.textContent = '';
+    box.append(
+      h('div', {}, h('h2', { text: 'Who is away' }), h('div', { class: 'sub', text: S.sample ? 'Sample leave' : 'The whole team' })),
+      h('div', {}, h('h3', { text: 'Away today' }), now.length ? h('div', { class: 'awlist' }, now.map(row)) : h('div', { class: 'none', text: 'Nobody is away today.' })),
+      h('div', {}, h('h3', { text: 'Coming up (next 30 days)' }),
+        soon.length ? h('div', { class: 'awlist' }, soon.slice(0, 6).map(row), soon.length > 6 ? h('div', { class: 'more', text: `+ ${soon.length - 6} more` }) : null) : h('div', { class: 'none', text: 'Nothing booked.' })),
+      h('div', {}, h('h3', { text: `Days taken in ${year}` }),
+        by.length ? h('div', { class: 'bars' }, by.map((e) => {
+          const fill = h('div', { class: 'fill' }); fill.style.width = (max ? e.total / max * 100 : 0).toFixed(1) + '%';
+          const parts = LK.TYPES.filter((t) => e.byType[t]).map((t) => `${shortType(t)} ${Number.isInteger(e.byType[t]) ? e.byType[t] : e.byType[t].toFixed(1)}`).join(' · ');
+          return h('div', { class: 'bar' }, h('div', { class: 'bt' }, h('span', { class: 'bn', text: e.name }), h('span', { class: 'ba', text: LK.dayWord(e.total) })), h('div', { class: 'track' }, fill), h('div', { class: 'bsub', text: parts }));
+        })) : h('div', { class: 'none', text: 'No leave this year yet.' })));
+  }
+
+  function paintLeave() { paintLeaveFilters(); paintLeaveTiles(); paintLeaveTable(); paintAway(); }
+
   /* ---------- one claim, in the side panel ---------- */
   function openDrawer(id) {
     S.open = id; S.lastFocus = document.activeElement;
@@ -282,6 +439,8 @@
   function paintDrawer(keepScroll) {
     const c = find(S.open), d = $('#drawer');
     if (!c) { closeDrawer(); return; }
+    const isLeave = c.kind === 'leave';
+    const keys = isLeave ? LEAVE_STATUS_KEYS : STATUS_KEYS;
     const top = d.scrollTop;
     S.drawerSig = sigOf(c);
     if (S.draft.id !== c.id) S.draft = { id: c.id, text: null };
@@ -291,50 +450,66 @@
     noteBox.addEventListener('input', () => { S.draft.text = noteBox.value; saveNote.disabled = noteBox.value.trim() === (c.note || ''); });
 
     const receiptsFor = (l) => (c.files || []).filter((f) => (f.kind === 'receipt' && f.line === l.no) || ((kindOf(l.category) === 'toll' || kindOf(l.category) === 'parking') && f.kind === 'tollcheck'));
-    const fileKind = { 'form-pdf': 'Claim form (PDF)', 'form-xlsx': 'Claim form (Excel)', tng: "Touch 'n Go statement", tollcheck: 'Toll check list', receipt: 'Receipt', other: 'File' };
+    const fileKind = isLeave
+      ? { 'form-pdf': 'Leave form (PDF)', 'form-xlsx': 'Leave form (Excel)', mc: 'Medical certificate (MC)', other: 'File' }
+      : { 'form-pdf': 'Claim form (PDF)', 'form-xlsx': 'Claim form (Excel)', tng: "Touch 'n Go statement", tollcheck: 'Toll check list', receipt: 'Receipt', other: 'File' };
+    const sampleTag = c.sample ? h('span', { class: 'tag', text: 'Sample' }) : null;
+    const sentWhen = `sent ${fullWhen(c.updatedAt)}${c.version > 1 ? ` · version ${c.version}` : ''}`;
+
+    const head = isLeave
+      ? h('div', { class: 't' }, h('h2', {}, c.claimant, sampleTag), h('div', { class: 's', text: `${LK.TYPE_LABEL[LK.typeOf(c)]} · ${sentWhen}` }))
+      : h('div', { class: 't' }, h('h2', {}, c.claimant, sampleTag), h('div', { class: 's', text: `${c.monthLabel} · ${sentWhen}` }));
+    const big = isLeave
+      ? h('div', { class: 'big' }, h('span', { class: 'n', text: LK.dayWord(c.days) }), h('span', { class: 'l', text: LK.rangeText(c.start, c.end) }))
+      : h('div', { class: 'big' }, h('span', { class: 'n', text: money(c.total) }), h('span', { class: 'l', text: `${c.lines.length} line${c.lines.length > 1 ? 's' : ''}` }));
+
+    // the two things the accountant wants most, one click away; the files come through the inbox, so no Google account or Drive access is needed
+    const quick = (c.files || []).length ? h('div', { class: 'quick' },
+      (c.files || []).some((f) => f.kind === 'form-pdf') ? h('button', { class: 'primary', type: 'button', text: isLeave ? 'Open leave form' : 'Open claim form', onclick: () => viewFile(c, c.files.find((f) => f.kind === 'form-pdf')) }) : null,
+      h('button', { class: 'ghost', type: 'button', id: 'btnAllFiles', text: 'Download everything (.zip)', onclick: (e) => downloadAll(c, e.currentTarget) })) : null;
+
+    const statusSec = h('div', { class: 'sec' }, h('h3', { text: 'Status' }),
+      h('div', { class: 'seg' + (isLeave ? ' three' : ''), role: 'group', 'aria-label': 'Status' }, keys.map((k) => h('button', { class: `s-${k}`, type: 'button', 'aria-pressed': c.status === k ? 'true' : 'false', onclick: () => changeStatus(c.id, k) }, h('span', { class: 'dot' }), STATUS[k]))),
+      h('div', { class: 'note-row' }, noteBox, h('div', { class: 'acts' }, saveNote)));
+
+    const middle = isLeave
+      ? h('div', { class: 'sec' }, h('h3', { text: 'Details' }),
+        h('dl', { class: 'kv' },
+          h('dt', { text: 'Type' }), h('dd', { text: LK.TYPE_LABEL[LK.typeOf(c)] }),
+          h('dt', { text: 'From' }), h('dd', { text: niceDay(c.start) }),
+          h('dt', { text: 'To' }), h('dd', { text: niceDay(c.end) }),
+          h('dt', { text: 'Days' }), h('dd', { text: LK.dayWord(c.days) + (c.start !== c.end ? ' (weekdays, without public holidays)' : '') }),
+          h('dt', { text: 'Reason' }), h('dd', { text: c.reason || '–' }),
+          h('dt', { text: 'Signed on' }), h('dd', { text: niceDay(c.signedOn) || '–' }),
+          LK.typeOf(c) === 'sick' ? h('dt', { text: 'MC' }) : null, LK.typeOf(c) === 'sick' ? h('dd', { text: LK.hasMc(c) ? 'Attached' : c.sample ? 'Attached (sample)' : 'Not attached' }) : null))
+      : h('div', { class: 'sec' }, h('h3', { text: 'Lines' }),
+        c.lines.map((l) => {
+          const rc = receiptsFor(l);
+          return h('div', { class: 'ln' }, icon(kindOf(l.category)),
+            h('div', { style: 'min-width:0' }, h('div', { class: 'nm', text: l.name || l.category }),
+              h('div', { class: 'dt', text: [l.category, niceDate(l.date), l.receiptNo ? 'No. ' + l.receiptNo : ''].filter(Boolean).join(' · ') })),
+            h('div', {}, h('div', { class: 'am', text: money(l.amount) }),
+              rc.length ? h('div', { class: 'vw' }, rc.map((f, i) => h('button', { class: 'link', type: 'button', text: f.kind === 'tollcheck' ? 'Toll list' : rc.length > 1 ? `Receipt ${i + 1}` : 'Receipt', onclick: () => viewFile(c, f) }))) : null));
+        }),
+        h('div', { class: 'ltot' }, h('span', { text: 'Total' }), h('span', { text: money(c.total) })));
+
+    const filesSec = h('div', { class: 'sec' }, h('h3', { text: 'Files' }),
+      c.sample ? h('div', { class: 'sample-note', text: isLeave ? 'Sample leave applications have no files. A real one lists its leave form and any medical certificate here.' : 'Sample claims have no files. A real claim lists its claim form, statement and receipts here.' })
+        : !(c.files || []).length ? h('div', { class: 'sample-note', text: isLeave ? 'No files came with this application.' : 'No files came with this claim.' })
+          : h('div', {}, (c.files || []).map((f) => h('div', { class: 'fl' },
+            h('div', { style: 'min-width:0' }, h('div', { class: 'fn', title: f.name, text: f.name }), h('div', { class: 'fs', text: `${fileKind[f.kind] || 'File'} · ${sizeText(f.size)}` })),
+            h('div', { class: 'fa' }, h('button', { class: 'link', type: 'button', text: 'View', onclick: () => viewFile(c, f) }), h('button', { class: 'link', type: 'button', text: 'Download', onclick: () => downloadFile(c, f) })))),
+            h('p', { class: 'hint', text: 'Files open straight from here. No Google account is needed.' })));
 
     d.textContent = '';
     d.append(
-      h('div', { class: 'dhead' },
-        h('div', { class: 't' }, h('h2', {}, c.claimant, c.sample ? h('span', { class: 'tag', text: 'Sample' }) : null), h('div', { class: 's', text: `${c.monthLabel} · sent ${fullWhen(c.updatedAt)}${c.version > 1 ? ` · version ${c.version}` : ''}` })),
-        h('button', { class: 'x', type: 'button', 'aria-label': 'Close', text: '×', onclick: closeDrawer })),
-      h('div', { class: 'dbody' },
-        h('div', { class: 'big' }, h('span', { class: 'n', text: money(c.total) }), h('span', { class: 'l', text: `${c.lines.length} line${c.lines.length > 1 ? 's' : ''}` })),
-
-        // the two things the accountant wants most, one click away; the files come through the inbox, so no Google account or Drive access is needed
-        (c.files || []).length ? h('div', { class: 'quick' },
-          (c.files || []).some((f) => f.kind === 'form-pdf') ? h('button', { class: 'primary', type: 'button', text: 'Open claim form', onclick: () => viewFile(c, c.files.find((f) => f.kind === 'form-pdf')) }) : null,
-          h('button', { class: 'ghost', type: 'button', id: 'btnAllFiles', text: 'Download everything (.zip)', onclick: (e) => downloadAll(c, e.currentTarget) })) : null,
-
-        h('div', { class: 'sec' }, h('h3', { text: 'Status' }),
-          h('div', { class: 'seg', role: 'group', 'aria-label': 'Status' }, STATUS_KEYS.map((k) => h('button', { class: `s-${k}`, type: 'button', 'aria-pressed': c.status === k ? 'true' : 'false', onclick: () => changeStatus(c.id, k) }, h('span', { class: 'dot' }), STATUS[k]))),
-          h('div', { class: 'note-row' }, noteBox, h('div', { class: 'acts' }, saveNote))),
-
-        h('div', { class: 'sec' }, h('h3', { text: 'Lines' }),
-          c.lines.map((l) => {
-            const rc = receiptsFor(l);
-            return h('div', { class: 'ln' }, icon(kindOf(l.category)),
-              h('div', { style: 'min-width:0' }, h('div', { class: 'nm', text: l.name || l.category }),
-                h('div', { class: 'dt', text: [l.category, niceDate(l.date), l.receiptNo ? 'No. ' + l.receiptNo : ''].filter(Boolean).join(' · ') })),
-              h('div', {}, h('div', { class: 'am', text: money(l.amount) }),
-                rc.length ? h('div', { class: 'vw' }, rc.map((f, i) => h('button', { class: 'link', type: 'button', text: f.kind === 'tollcheck' ? 'Toll list' : rc.length > 1 ? `Receipt ${i + 1}` : 'Receipt', onclick: () => viewFile(c, f) }))) : null));
-          }),
-          h('div', { class: 'ltot' }, h('span', { text: 'Total' }), h('span', { text: money(c.total) }))),
-
-        h('div', { class: 'sec' }, h('h3', { text: 'Files' }),
-          c.sample ? h('div', { class: 'sample-note', text: 'Sample claims have no files. A real claim lists its claim form, statement and receipts here.' })
-            : !(c.files || []).length ? h('div', { class: 'sample-note', text: 'No files came with this claim.' })
-              : h('div', {}, (c.files || []).map((f) => h('div', { class: 'fl' },
-                h('div', { style: 'min-width:0' }, h('div', { class: 'fn', title: f.name, text: f.name }), h('div', { class: 'fs', text: `${fileKind[f.kind] || 'File'} · ${sizeText(f.size)}` })),
-                h('div', { class: 'fa' }, h('button', { class: 'link', type: 'button', text: 'View', onclick: () => viewFile(c, f) }), h('button', { class: 'link', type: 'button', text: 'Download', onclick: () => downloadFile(c, f) })))),
-                h('p', { class: 'hint', text: 'Files open straight from here. No Google account is needed.' }))),
-
+      h('div', { class: 'dhead' }, head, h('button', { class: 'x', type: 'button', 'aria-label': 'Close', text: '×', onclick: closeDrawer })),
+      h('div', { class: 'dbody' }, big, quick, statusSec, middle, filesSec,
         h('div', { class: 'sec' }, h('h3', { text: 'Sent' }),
           h('dl', { class: 'kv' },
             h('dt', { text: 'From' }), h('dd', { text: c.from || '–' }),
             h('dt', { text: 'To' }), h('dd', { text: c.to || '–' }),
             h('dt', { text: 'Subject' }), h('dd', { text: c.subject || '–' }))),
-
         h('div', { class: 'sec' }, h('h3', { text: 'History' }),
           h('ul', { class: 'hist' }, (c.history || []).slice().reverse().map((e) => h('li', {}, e.text, h('time', { text: fullWhen(e.at) })))))));
     if (keepScroll) d.scrollTop = top;
@@ -401,13 +576,14 @@
     const label = btn.textContent;
     btn.disabled = true;
     try {
-      const zip = new JSZip(), root = zip.folder(safe(`Claim - ${c.monthLabel} - ${c.claimant}`));
+      const base = safe(c.kind === 'leave' ? `Leave - ${c.claimant} - ${LK.rangeText(c.start, c.end)}` : `Claim - ${c.monthLabel} - ${c.claimant}`);
+      const zip = new JSZip(), root = zip.folder(base);
       for (let i = 0; i < files.length; i++) {
         btn.textContent = `Getting files… ${i + 1} of ${files.length}`;
         root.file(files[i].name, await fetchBlob(c, files[i]));
       }
       btn.textContent = 'Zipping…';
-      saveAs(await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), safe(`Claim - ${c.monthLabel} - ${c.claimant}`) + '.zip');
+      saveAs(await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), base + '.zip');
     } catch (e) { toast("Couldn't make the zip: " + ((e && e.message) || e), true); }
     btn.disabled = false; btn.textContent = label;
   }
@@ -443,6 +619,13 @@
   }
 
   function exportCsv(kind) {
+    if (kind === 'leave') {
+      const ll = leaveAll().filter(lInView).sort((a, b) => a.start.localeCompare(b.start) || a.claimant.localeCompare(b.claimant));
+      if (!ll.length) { toast('Nothing to export for this view.', true); return; }
+      const t = new Date();
+      saveAs(new Blob([csv(LK.csvRows(ll, STATUS))], { type: 'text/csv;charset=utf-8' }), `WFC leave - ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}.csv`);
+      return;
+    }
     const list = all().filter(inView).sort((a, b) => a.month.localeCompare(b.month) || a.claimant.localeCompare(b.claimant));
     if (!list.length) { toast('Nothing to export for this view.', true); return; }
     let rows;
@@ -479,11 +662,26 @@
     $('#fMonth').addEventListener('change', (e) => { S.f.month = e.target.value; render(); });
     $('#fStaff').addEventListener('change', (e) => { S.f.staff = e.target.value; render(); });
     $('#fSearch').addEventListener('input', (e) => { S.f.q = e.target.value; render(); });
-    document.querySelectorAll('.sort').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#tbl .sort').forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.sort;
       S.sort = S.sort.key === k ? { key: k, dir: -S.sort.dir } : { key: k, dir: ['claimant', 'month', 'status'].includes(k) ? 1 : -1 };
       render();
     }));
+    // the Leave tab
+    $('#lMonth').addEventListener('change', (e) => { S.lf.month = e.target.value; render(); });
+    $('#lStaff').addEventListener('change', (e) => { S.lf.staff = e.target.value; render(); });
+    $('#lSearch').addEventListener('input', (e) => { S.lf.q = e.target.value; render(); });
+    document.querySelectorAll('#ltbl .sort').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.lsort;
+      S.lsort = S.lsort.key === k ? { key: k, dir: -S.lsort.dir } : { key: k, dir: ['claimant', 'type', 'status'].includes(k) ? 1 : -1 };
+      render();
+    }));
+    $('#tabClaims').addEventListener('click', () => setView('claims'));
+    $('#tabLeave').addEventListener('click', () => setView('leave'));
+    window.addEventListener('hashchange', () => setView(location.hash === '#leave' ? 'leave' : 'claims', true));
+    S.view = location.hash === '#leave' ? 'leave' : 'claims';
+    $('#viewClaims').hidden = S.view !== 'claims'; $('#viewLeave').hidden = S.view !== 'leave';
+    document.querySelectorAll('#exportMenu [data-view]').forEach((b) => { b.hidden = b.dataset.view !== S.view; });
     $('#btnRefresh').addEventListener('click', () => load());
     $('#lockForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -494,7 +692,7 @@
       await load();
       btn.disabled = false; btn.textContent = 'Open';
     });
-    $('#btnLock').addEventListener('click', () => { Inbox.clearKey(); S.real = []; S.prev = null; S.sample = false; render(); showLock(''); });
+    $('#btnLock').addEventListener('click', () => { Inbox.clearKey(); S.real = []; S.realLeave = []; S.prev = null; S.sample = false; render(); showLock(''); });
     croppedLogo().then((u) => { $('#lockLogo').src = u; }).catch(() => $('#lockLogo').remove());
     $('#scrim').addEventListener('click', closeDrawer);
     $('#vClose').addEventListener('click', () => $('#viewer').close());
@@ -514,6 +712,6 @@
     load();
   }
 
-  window.__dash = { S, load, render, showSample, openDrawer, closeDrawer, csv };      // handy for testing
+  window.__dash = { S, load, render, showSample, openDrawer, closeDrawer, csv, setView };      // handy for testing
   init();
 })();

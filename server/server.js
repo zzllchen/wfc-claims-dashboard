@@ -11,8 +11,11 @@ const path = require('path');
 const crypto = require('crypto');
 
 const SITE = path.join(__dirname, '..');
-const STATUSES = ['new', 'checked', 'paid', 'question'];
-const KINDS = ['form-pdf', 'form-xlsx', 'tng', 'tollcheck', 'receipt', 'other'];
+// a claim goes New > Checked > Paid; a leave application goes New > Recorded (the office filled in the balance). Either can be "Has a question".
+const STATUS_BY_KIND = { claim: ['new', 'checked', 'paid', 'question'], leave: ['new', 'recorded', 'question'] };
+const STATUS_WORD = { new: 'New', checked: 'Checked', paid: 'Paid', recorded: 'Recorded', question: 'Has a question' };
+const LEAVE_TYPES = { annual: 'Annual leave', sick: 'Sick leave', unpaid: 'Unpaid leave', personal: 'Personal leave', other: 'Other leave' };
+const KINDS = ['form-pdf', 'form-xlsx', 'tng', 'tollcheck', 'receipt', 'mc', 'other'];
 const MAX_LINES = 60;                 // the claim form has 35 rows
 const MAX_FILE = 30 * 1024 * 1024;
 const MAX_BODY = 48 * 1024 * 1024;
@@ -49,6 +52,28 @@ function cleanClaim(c) {
     from: emailOf(c.from), to: emailOf(c.to), subject: str(c.subject, 160) };
 }
 
+/* ---------- leave applications ---------- */
+const isoOk = (v) => { const s = String(v || ''); return /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s ? s : ''; };
+const dayNo = (iso) => Math.round(Date.parse(iso + 'T00:00:00Z') / 864e5);
+function weekdays(start, end) { let n = 0; for (let d = dayNo(start); d <= dayNo(end); d++) { const w = new Date(d * 864e5).getUTCDay(); if (w !== 0 && w !== 6) n++; } return n; }
+
+function cleanLeave(l) {
+  l = l || {};
+  const claimant = str(l.claimant, 80);
+  if (!claimant) throw fail('The employee name is missing.');
+  const start = isoOk(l.start), end = isoOk(l.end);
+  if (!start || !end) throw fail('The leave dates must look like 2026-10-31.');
+  if (end < start) throw fail('The leave end date is before the start date.');
+  const span = dayNo(end) - dayNo(start) + 1;
+  if (span > 366) throw fail('A leave application can cover up to a year.');
+  const type = Object.prototype.hasOwnProperty.call(LEAVE_TYPES, l.type) ? l.type : 'other';
+  const given = Number(l.days);
+  const days = isFinite(given) && given >= 0 && given <= span ? Math.round(given * 2) / 2 : weekdays(start, end);       // the sender knows the public holidays; without its figure, Monday to Friday
+  const month = start.slice(0, 7);
+  return { kind: 'leave', claimant, type, typeLabel: LEAVE_TYPES[type], start, end, days, reason: str(l.reason, 200), signedOn: isoOk(l.signedOn),
+    month, monthLabel: monthLabel(month), from: emailOf(l.from), to: emailOf(l.to), subject: str(l.subject, 160) };
+}
+
 /* the dashboard only ever sees this: no folder names, no upload token */
 function publicClaim(rec) {
   const p = rec && rec.published;
@@ -61,7 +86,7 @@ function publicClaim(rec) {
 function makeStore(dataDir) {
   fs.mkdirSync(dataDir, { recursive: true });
   const recPath = (id) => path.join(dataDir, id, 'record.json');
-  const okId = (id) => /^\d{4}-\d{2}_[a-z0-9-]{1,40}$/.test(String(id || ''));
+  const okId = (id) => /^(\d{4}-\d{2}|leave-\d{4}-\d{2}-\d{2})_[a-z0-9-]{1,40}$/.test(String(id || ''));
   return {
     dataDir, okId,
     get(id) { if (!okId(id)) return null; try { return JSON.parse(fs.readFileSync(recPath(id), 'utf8')); } catch (e) { return null; } },
@@ -80,13 +105,14 @@ function makeApi(dataDir, opts) {
   const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude'];             // what the Claim Builder does: never needs the password
 
   const actions = {
-    ping() { return { ok: true, service: 'wfc-claims', version: 1, where: 'local', auth: !!password, claude: false }; },
+    ping() { return { ok: true, service: 'wfc-claims', version: 2, where: 'local', auth: !!password, claude: false, leave: true }; },
 
     claude() { throw fail('Claude is not set up on the local inbox.', 503); },       // only the Google inbox has the relay
 
     list() {
-      const claims = db.all().map(publicClaim).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-      return { ok: true, claims };
+      const all = db.all().map(publicClaim).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+      // leave applications come in their own list, so a dashboard that only knows claims keeps working
+      return { ok: true, claims: all.filter((c) => c.kind !== 'leave'), leave: all.filter((c) => c.kind === 'leave') };
     },
 
     file(q) {
@@ -99,8 +125,9 @@ function makeApi(dataDir, opts) {
     },
 
     submit(b) {
-      const claim = cleanClaim(b.claim);
-      const id = `${claim.month}_${slug(claim.claimant)}`;
+      // a saved leave form comes as `leave`, a claim as `claim`; one application per person per start date, one claim per person per month
+      const claim = b.leave ? cleanLeave(b.leave) : cleanClaim(b.claim);
+      const id = b.leave ? `leave-${claim.start}_${slug(claim.claimant)}` : `${claim.month}_${slug(claim.claimant)}`;
       const rec = db.get(id) || { id, published: null, pending: null };
       if (rec.pending) db.rm(db.dirOf(id, rec.pending.dir));         // an earlier upload that never finished
       const token = crypto.randomBytes(12).toString('hex');
@@ -153,10 +180,10 @@ function makeApi(dataDir, opts) {
       const p = rec && rec.published;
       if (!p) throw fail('That claim is not there.', 404);
       const status = b.status == null ? p.status : String(b.status);
-      if (!STATUSES.includes(status)) throw fail('Unknown status.');
+      if (!STATUS_BY_KIND[p.kind === 'leave' ? 'leave' : 'claim'].includes(status)) throw fail('Unknown status.');
       const note = b.note == null ? p.note : str(b.note, 600);
       const at = now(), notes = [];
-      if (status !== p.status) notes.push(`Marked as ${({ new: 'New', checked: 'Checked', paid: 'Paid', question: 'Has a question' })[status]}`);
+      if (status !== p.status) notes.push(`Marked as ${STATUS_WORD[status]}`);
       if (note !== p.note) notes.push(note ? 'Note updated' : 'Note removed');
       p.status = status; p.note = note;
       if (notes.length) p.statusAt = at;
@@ -244,7 +271,7 @@ function start({ port = 8787, dataDir = path.join(SITE, 'data'), quiet = false, 
   });
 }
 
-module.exports = { start, makeApi, cleanClaim, slug };
+module.exports = { start, makeApi, cleanClaim, cleanLeave, slug };
 
 if (require.main === module) {
   const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };

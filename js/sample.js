@@ -43,4 +43,43 @@
   }
 
   root.WFC_SAMPLE = build;
+  /* Made-up leave applications, dated around today so the "Away now" and "Coming up" lists have something to show. */
+  const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const addDays = (n) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + n); return d; };
+  const weekdays = (a, b) => { let n = 0; for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) { const w = d.getDay(); if (w !== 0 && w !== 6) n++; } return n; };
+  const TYPE_LABEL = { annual: 'Annual leave', sick: 'Sick leave', unpaid: 'Unpaid leave', personal: 'Personal leave', other: 'Other leave' };
+
+  // [staff, type, start offset (days from today), length (calendar days), status, hours ago sent, reason, has MC]
+  const LEAVE_SPEC = [
+    ['Alex Tan', 'annual', -1, 3, 'new', 30, 'Family trip to Penang', false],
+    ['Raj Kumar', 'annual', 9, 3, 'new', 6, 'Brother\'s wedding', false],
+    ['Lim Wei Jie', 'personal', 20, 1, 'new', 52, 'Moving house', false],
+    ['Siti Aminah', 'sick', -3, 2, 'recorded', 24 * 3, 'Fever', true],
+    ['Nurul Huda', 'annual', 4, 5, 'question', 24 * 2, 'Hometown visit', false],
+    ['Nurul Huda', 'annual', -52, 4, 'recorded', 24 * 55, 'Hari Raya break', false],
+    ['Raj Kumar', 'sick', -38, 1, 'recorded', 24 * 38, 'Migraine', true],
+    ['Alex Tan', 'annual', -75, 3, 'recorded', 24 * 78, 'Holiday', false],
+    ['Siti Aminah', 'unpaid', -96, 2, 'recorded', 24 * 98, 'Family matter', false],
+  ];
+
+  function buildLeave() {
+    const now = Date.now();
+    return LEAVE_SPEC.map(([claimant, type, off, len, status, hours, reason, mc]) => {
+      const a = addDays(off), b = addDays(off + len - 1);
+      const start = isoOf(a), end = isoOf(b), month = start.slice(0, 7);
+      const at = new Date(now - hours * 3600e3).toISOString();
+      const history = [{ at, text: 'Received' }];
+      if (status !== 'new') history.push({ at: new Date(now - hours * 3600e3 / 2).toISOString(), text: `Marked as ${({ recorded: 'Recorded', question: 'Has a question' })[status]}` });
+      return {
+        id: `leave-${start}_${claimant.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, kind: 'leave', sample: true, claimant, type, typeLabel: TYPE_LABEL[type], start, end,
+        days: weekdays(a, b) || 1, reason, signedOn: start, month, monthLabel: `${MONTHS[a.getMonth()]} ${a.getFullYear()}`,
+        from: '', to: 'agnes@yutech.com.my', subject: 'Leave application', version: 1, submittedAt: at, updatedAt: at, status, statusAt: at, history,
+        files: mc ? [{ id: 'f3', name: 'MC 1.jpg', kind: 'mc', mime: 'image/jpeg', size: 90000 }] : [],
+        note: status === 'question' ? 'Is the 5th a public holiday? Please confirm the dates.' : status === 'recorded' ? 'Balance updated.' : '',
+      };
+    });
+  }
+
+  root.WFC_SAMPLE_LEAVE = buildLeave;
+
 })(window);

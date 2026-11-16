@@ -4,22 +4,25 @@
    server/server.js (the local version), so the two pages work with either.
 
    Where things are kept (all in the Google account that deploys this script, created on first use):
-     - a Google Sheet "WFC Claims"          one row per claim (handy for Agnes to open too)
+     - a Google Sheet "WFC Claims"          one row per claim on its "Claims" sheet, one per leave application on its "Leave" sheet (handy for Agnes to open too)
      - a Drive folder "WFC Claims files"    one sub-folder per claim, holding the claim form, receipts, TNG statement
    Nothing else is stored, and nothing leaves that Google account.
 
    No login yet (on purpose, for the demo): anyone who has the web app address can read and add claims.
    The setup steps are in README.md, "Put it online (Google)". */
 
-var VERSION = 1;
+var VERSION = 2;
 var MAX_LINES = 60;                                   // the claim form has 35 rows
 var MAX_FILE = 8 * 1024 * 1024;                      // bytes per file (Apps Script copes with about this much per request)
-var STATUSES = ['new', 'checked', 'paid', 'question'];
-var STATUS_WORD = { 'new': 'New', 'checked': 'Checked', 'paid': 'Paid', 'question': 'Has a question' };
-var KINDS = ['form-pdf', 'form-xlsx', 'tng', 'tollcheck', 'receipt', 'other'];
+// a claim goes New > Checked > Paid; a leave application goes New > Recorded (the office filled in the balance). Either can be "Has a question".
+var STATUS_BY_KIND = { claim: ['new', 'checked', 'paid', 'question'], leave: ['new', 'recorded', 'question'] };
+var STATUS_WORD = { 'new': 'New', 'checked': 'Checked', 'paid': 'Paid', 'recorded': 'Recorded', 'question': 'Has a question' };
+var LEAVE_TYPES = { annual: 'Annual leave', sick: 'Sick leave', unpaid: 'Unpaid leave', personal: 'Personal leave', other: 'Other leave' };
+var KINDS = ['form-pdf', 'form-xlsx', 'tng', 'tollcheck', 'receipt', 'mc', 'other'];
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 var MIME = { pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', zip: 'application/zip' };
 var COLS = ['id', 'claimant', 'month', 'total', 'status', 'updated', 'record'];
+var LEAVE_COLS = ['id', 'employee', 'start month', 'days', 'status', 'updated', 'record'];      // the "Leave" sheet: same layout, the record column last
 
 /* ---------- web app entry points ---------- */
 function doGet(e) {
@@ -76,7 +79,8 @@ function slug_(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').r
 function monthLabel_(m) { return MONTHS[+m.slice(5, 7) - 1] + ' ' + m.slice(0, 4); }
 function safeName_(s) { return str_(s, 120).replace(/[\\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '') || 'file'; }
 function emailOf_(v) { return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(v || '').replace(/^\s+|\s+$/g, '')) ? String(v).replace(/^\s+|\s+$/g, '').slice(0, 120) : ''; }
-function okId_(id) { return /^\d{4}-\d{2}_[a-z0-9-]{1,40}$/.test(String(id || '')); }
+function okId_(id) { return /^(\d{4}-\d{2}|leave-\d{4}-\d{2}-\d{2})_[a-z0-9-]{1,40}$/.test(String(id || '')); }
+function isLeaveId_(id) { return String(id || '').indexOf('leave-') === 0; }
 function mimeOf_(name, given) {
   if (/^[\w.+-]+\/[\w.+-]+$/.test(given || '')) return given;
   var m = String(name).match(/\.([A-Za-z0-9]+)$/);
@@ -100,6 +104,36 @@ function cleanClaim_(c) {
   if (!lines.length) throw fail_('The claim has no lines.');
   return { claimant: claimant, month: month, monthLabel: monthLabel_(month), total: round2_(total), lines: lines,
     from: emailOf_(c.from), to: emailOf_(c.to), subject: str_(c.subject, 160) };
+}
+
+/* ---------- leave applications ---------- */
+function isoOk_(v) {
+  var s = String(v || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  var d = new Date(s + 'T00:00:00Z');
+  return isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? '' : s;
+}
+function dayNo_(iso) { return Math.round(Date.parse(iso + 'T00:00:00Z') / 864e5); }
+function weekdays_(start, end) {
+  var n = 0;
+  for (var d = dayNo_(start); d <= dayNo_(end); d++) { var w = new Date(d * 864e5).getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
+function cleanLeave_(l) {
+  l = l || {};
+  var claimant = str_(l.claimant, 80);
+  if (!claimant) throw fail_('The employee name is missing.');
+  var start = isoOk_(l.start), end = isoOk_(l.end);
+  if (!start || !end) throw fail_('The leave dates must look like 2026-10-31.');
+  if (end < start) throw fail_('The leave end date is before the start date.');
+  var span = dayNo_(end) - dayNo_(start) + 1;
+  if (span > 366) throw fail_('A leave application can cover up to a year.');
+  var type = LEAVE_TYPES.hasOwnProperty(l.type) ? l.type : 'other';
+  var given = Number(l.days);
+  var days = isFinite(given) && given >= 0 && given <= span ? Math.round(given * 2) / 2 : weekdays_(start, end);      // the sender knows the public holidays; without its figure, Monday to Friday
+  var month = start.slice(0, 7);
+  return { kind: 'leave', claimant: claimant, type: type, typeLabel: LEAVE_TYPES[type], start: start, end: end, days: days, reason: str_(l.reason, 200), signedOn: isoOk_(l.signedOn),
+    month: month, monthLabel: monthLabel_(month), from: emailOf_(l.from), to: emailOf_(l.to), subject: str_(l.subject, 160) };
 }
 
 /* what the dashboard sees: no folder ids, no upload token */
@@ -128,8 +162,23 @@ function open_() {
   }
   if ((id = props.getProperty('FOLDER_ID'))) { try { folder = DriveApp.getFolderById(id); } catch (e) { folder = null; } }
   if (!folder) { folder = DriveApp.createFolder('WFC Claims files'); props.setProperty('FOLDER_ID', folder.getId()); }
-  return { sheet: ss.getSheets()[0], folder: folder };
+  return { ss: ss, sheet: ss.getSheetByName('Claims') || ss.getSheets()[0], folder: folder, leave: null };
 }
+
+/* the "Leave" sheet is made the first time a leave application arrives; reading never creates it */
+function leaveSheet_(db, create) {
+  if (db.leave) return db.leave;
+  var s = db.ss.getSheetByName('Leave');
+  if (!s && create) {
+    s = db.ss.insertSheet('Leave', db.ss.getSheets().length);
+    s.getRange(1, 1, 1, LEAVE_COLS.length).setValues([LEAVE_COLS]).setFontWeight('bold');
+    s.setFrozenRows(1);
+    s.hideColumns(LEAVE_COLS.length);
+  }
+  db.leave = s || null;
+  return db.leave;
+}
+function sheetFor_(db, id, create) { return isLeaveId_(id) ? leaveSheet_(db, create) : db.sheet; }
 
 function rowOf_(sheet, id) {
   var last = sheet.getLastRow();
@@ -141,9 +190,11 @@ function rowOf_(sheet, id) {
 
 function getRec_(db, id) {
   if (!okId_(id)) return null;
-  var row = rowOf_(db.sheet, id);
+  var sheet = sheetFor_(db, id, false);
+  if (!sheet) return null;
+  var row = rowOf_(sheet, id);
   if (!row) return null;
-  try { return JSON.parse(db.sheet.getRange(row, COLS.length).getValue()); } catch (e) { return null; }
+  try { return JSON.parse(sheet.getRange(row, COLS.length).getValue()); } catch (e) { return null; }
 }
 
 function putRec_(db, rec) {
@@ -151,9 +202,10 @@ function putRec_(db, rec) {
   if (p && p.history.length > 50) p.history = p.history.slice(-50);
   var json = JSON.stringify(rec);
   if (json.length > 45000) throw fail_('This claim is too big to store.', 413);       // a Google Sheets cell holds 50,000 characters
-  var row = rowOf_(db.sheet, rec.id) || db.sheet.getLastRow() + 1;
-  db.sheet.getRange(row, 1, 1, COLS.length).setValues([[rec.id, p ? p.claimant : rec.pending.claim.claimant, p ? p.month : rec.pending.claim.month,
-    p ? p.total : '', p ? p.status : 'uploading', p ? p.updatedAt : '', json]]);
+  var sheet = sheetFor_(db, rec.id, true);
+  var row = rowOf_(sheet, rec.id) || sheet.getLastRow() + 1;
+  sheet.getRange(row, 1, 1, COLS.length).setValues([[rec.id, p ? p.claimant : rec.pending.claim.claimant, p ? p.month : rec.pending.claim.month,
+    p ? (p.kind === 'leave' ? p.days : p.total) : '', p ? p.status : 'uploading', p ? p.updatedAt : '', json]]);
 }
 
 function trash_(folderId) {
@@ -162,7 +214,7 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_() }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true }; }
 
 /* ---------- Claude relay: the Claim Builder asks here to read a receipt photo, so nobody pastes a key ----------
    The Anthropic key lives only in the script properties (CLAUDE_KEY), never in a web page. Whatever the page asks for, the model is fixed here,
@@ -228,15 +280,21 @@ function claude_(b) {
   return { ok: true, reply: { content: j.content, stop_reason: j.stop_reason, usage: j.usage, model: j.model } };
 }
 
-function list_() {
-  var db = open_(), last = db.sheet.getLastRow(), claims = [];
+function readSheet_(sheet) {
+  var out = [], last = sheet ? sheet.getLastRow() : 0;
   if (last >= 2) {
-    db.sheet.getRange(2, COLS.length, last - 1, 1).getValues().forEach(function (r) {
-      try { var c = publicClaim_(JSON.parse(r[0])); if (c) claims.push(c); } catch (e) { /* a row that is not ours */ }
+    sheet.getRange(2, COLS.length, last - 1, 1).getValues().forEach(function (r) {
+      try { var c = publicClaim_(JSON.parse(r[0])); if (c) out.push(c); } catch (e) { /* a row that is not ours */ }
     });
   }
-  claims.sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); });
-  return { ok: true, claims: claims };
+  out.sort(function (a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); });
+  return out;
+}
+
+/* leave applications come in their own list, so a dashboard that only knows claims keeps working */
+function list_() {
+  var db = open_();
+  return { ok: true, claims: readSheet_(db.sheet), leave: readSheet_(leaveSheet_(db, false)) };
 }
 
 function file_(q) {
@@ -248,8 +306,9 @@ function file_(q) {
 }
 
 function submit_(b) {
-  var claim = cleanClaim_(b.claim), db = open_();
-  var id = claim.month + '_' + slug_(claim.claimant);
+  // a saved leave form comes as `leave`, a claim as `claim`; one application per person per start date, one claim per person per month
+  var claim = b.leave ? cleanLeave_(b.leave) : cleanClaim_(b.claim), db = open_();
+  var id = b.leave ? 'leave-' + claim.start + '_' + slug_(claim.claimant) : claim.month + '_' + slug_(claim.claimant);
   var rec = getRec_(db, id) || { id: id, published: null, pending: null };
   if (rec.pending) trash_(rec.pending.folderId);                 // an earlier upload that never finished
   var token = Utilities.getUuid().replace(/-/g, '');
@@ -305,7 +364,7 @@ function status_(b) {
   var db = open_(), rec = getRec_(db, b.id), p = rec && rec.published;
   if (!p) throw fail_('That claim is not there.', 404);
   var status = b.status == null ? p.status : String(b.status);
-  if (STATUSES.indexOf(status) < 0) throw fail_('Unknown status.');
+  if (STATUS_BY_KIND[p.kind === 'leave' ? 'leave' : 'claim'].indexOf(status) < 0) throw fail_('Unknown status.');
   var note = b.note == null ? p.note : str_(b.note, 600);
   var at = new Date().toISOString(), notes = [];
   if (status !== p.status) notes.push('Marked as ' + STATUS_WORD[status]);
@@ -322,6 +381,7 @@ function delete_(b) {
   if (!rec) throw fail_('That claim is not there.', 404);
   if (rec.pending) trash_(rec.pending.folderId);
   if (rec.published) trash_(rec.published.folderId);              // to the Drive bin, so it can still be restored from there
-  db.sheet.deleteRow(rowOf_(db.sheet, rec.id));
+  var sheet = sheetFor_(db, rec.id, false);
+  sheet.deleteRow(rowOf_(sheet, rec.id));
   return { ok: true };
 }

@@ -154,4 +154,108 @@ async function runAuth(api, password, log) {
   say('everything works with the password');
 }
 
-module.exports = { runProtocol, runAuth };
+
+/* Leave applications: a saved leave form is sent like a claim (submit, upload, finish) but as `leave`, and lands in its own list. */
+const leaveForm = (extra) => Object.assign({
+  claimant: 'Chin Zhi Liang', type: 'annual', start: '2026-11-05', end: '2026-11-09', days: 2, reason: 'Hometown visit', signedOn: '2026-11-02',
+  from: 'edward.wfcsystems@gmail.com', to: 'agnes@yutech.com.my', subject: 'Leave application - 5 - 9 Nov 2026',
+}, extra);
+
+async function runLeave(api, log) {
+  const say = log || (() => {});
+  const must = (r, what) => { assert.strictEqual(r.ok, true, `${what}: expected ok, got ${JSON.stringify(r).slice(0, 200)}`); return r; };
+  const mustFail = (r, what) => { assert.strictEqual(r.ok, false, `${what}: expected a refusal, got ${JSON.stringify(r).slice(0, 200)}`); assert.ok(r.error, `${what}: refusal needs a plain message`); return r; };
+  const lists = async () => must(await api.get({ action: 'list' }), 'list');
+  const send = async (leave, files) => {
+    const sub = must(await api.post({ action: 'submit', leave }), 'submit leave');
+    for (const f of files || []) must(await api.post({ action: 'upload', id: sub.id, token: sub.token, file: f }), 'upload ' + f.id);
+    return { sub, fin: must(await api.post({ action: 'finish', id: sub.id, token: sub.token }), 'finish leave') };
+  };
+
+  assert.strictEqual(must(await api.get({ action: 'ping' }), 'ping').leave, true, 'ping says leave is understood');
+  const empty = await lists();
+  assert.deepStrictEqual(empty.claims, []); assert.deepStrictEqual(empty.leave, [], 'an empty leave list is there');
+
+  mustFail(await api.post({ action: 'submit', leave: leaveForm({ claimant: '  ' }) }), 'no name');
+  mustFail(await api.post({ action: 'submit', leave: leaveForm({ start: 'next week' }) }), 'bad start');
+  mustFail(await api.post({ action: 'submit', leave: leaveForm({ end: '2026-02-30' }) }), 'a date that does not exist');
+  mustFail(await api.post({ action: 'submit', leave: leaveForm({ start: '2026-11-09', end: '2026-11-05' }) }), 'ends before it starts');
+  mustFail(await api.post({ action: 'submit', leave: leaveForm({ start: '2026-01-01', end: '2027-03-01' }) }), 'longer than a year');
+  mustFail(await api.post({ action: 'submit' }), 'neither a claim nor leave');
+  say('leave: validation');
+
+  const files = [
+    { id: 'f1', name: 'WFC - NOV Leave form (5Nov).pdf', kind: 'form-pdf', mime: 'application/pdf', data: b64('%PDF-leave') },
+    { id: 'f2', name: 'WFC - NOV Leave form (5Nov).xlsx', kind: 'form-xlsx', data: b64('XLSXDATA') },
+    { id: 'f3', name: 'MC 1 - 5 - 9 Nov 2026.jpg', kind: 'mc', mime: 'image/jpeg', data: b64('MCPHOTO') },
+  ];
+  const sub = must(await api.post({ action: 'submit', leave: leaveForm() }), 'submit');
+  assert.strictEqual(sub.id, 'leave-2026-11-05_chin-zhi-liang');
+  assert.deepStrictEqual((await lists()).leave, [], 'an application being uploaded is not shown yet');
+  for (const f of files) must(await api.post({ action: 'upload', id: sub.id, token: sub.token, file: f }), 'upload ' + f.id);
+  const fin = must(await api.post({ action: 'finish', id: sub.id, token: sub.token }), 'finish');
+  assert.strictEqual(fin.version, 1); assert.strictEqual(fin.files, 3);
+
+  const got = await lists();
+  assert.deepStrictEqual(got.claims, [], 'a leave application is never listed as a claim');
+  assert.strictEqual(got.leave.length, 1);
+  const l = got.leave[0];
+  assert.strictEqual(l.kind, 'leave'); assert.strictEqual(l.claimant, 'Chin Zhi Liang'); assert.strictEqual(l.type, 'annual'); assert.strictEqual(l.typeLabel, 'Annual leave');
+  assert.strictEqual(l.start, '2026-11-05'); assert.strictEqual(l.end, '2026-11-09'); assert.strictEqual(l.days, 2, 'the sender knows the public holidays, so its day count is kept');
+  assert.strictEqual(l.reason, 'Hometown visit'); assert.strictEqual(l.signedOn, '2026-11-02');
+  assert.strictEqual(l.month, '2026-11'); assert.strictEqual(l.monthLabel, 'November 2026');
+  assert.strictEqual(l.status, 'new'); assert.strictEqual(l.version, 1); assert.strictEqual(l.from, 'edward.wfcsystems@gmail.com');
+  assert.strictEqual(l.files.length, 3); assert.strictEqual(l.files.find((f) => f.id === 'f3').kind, 'mc');
+  assert.strictEqual(l.history[0].text, 'Received');
+  ['token', 'driveId', 'folderId', 'pending', '"dir"', '"file":'].forEach((k) => assert.ok(!JSON.stringify(got).includes(k), 'the list must not show ' + k));
+  assert.strictEqual(must(await api.get({ action: 'file', id: sub.id, file: 'f3' }), 'the MC').data, b64('MCPHOTO'));
+  say('leave: submit + upload + finish + list');
+
+  // the days are worked out when the sender gives none or a silly figure (Monday to Friday)
+  const plain = await send(leaveForm({ start: '2026-11-16', end: '2026-11-22', days: undefined, type: 'honeymoon' }), [files[0]]);
+  const plainRec = (await lists()).leave.find((x) => x.id === plain.sub.id);
+  assert.strictEqual(plainRec.days, 5, 'Mon-Sun is five working days'); assert.strictEqual(plainRec.type, 'other', 'an unknown type becomes Other');
+  const silly = await send(leaveForm({ start: '2026-11-23', end: '2026-11-24', days: 99 }), [files[0]]);
+  assert.strictEqual((await lists()).leave.find((x) => x.id === silly.sub.id).days, 2, 'more days than the dates cover is replaced');
+  const half = await send(leaveForm({ start: '2026-11-25', end: '2026-11-25', days: 0.5 }), [files[0]]);
+  assert.strictEqual((await lists()).leave.find((x) => x.id === half.sub.id).days, 0.5, 'half a day is allowed');
+  for (const x of [plain, silly, half]) must(await api.post({ action: 'delete', id: x.sub.id }), 'tidy up');
+  say('leave: days');
+
+  // statuses: a leave application is New, Recorded or Has a question; a claim keeps its own
+  const rec = must(await api.post({ action: 'status', id: sub.id, status: 'recorded', note: 'Balance filled in' }), 'recorded');
+  assert.strictEqual(rec.claim.status, 'recorded'); assert.deepStrictEqual(rec.claim.history.slice(-2).map((h) => h.text), ['Marked as Recorded', 'Note updated']);
+  mustFail(await api.post({ action: 'status', id: sub.id, status: 'paid' }), 'a leave application is never Paid');
+  mustFail(await api.post({ action: 'status', id: sub.id, status: 'checked' }), 'a leave application is never Checked');
+  must(await api.post({ action: 'status', id: sub.id, status: 'question' }), 'a question');
+  const cl = must(await api.post({ action: 'submit', claim: claim() }), 'a claim in the same month');
+  must(await api.post({ action: 'finish', id: cl.id, token: cl.token }), 'finish the claim');
+  mustFail(await api.post({ action: 'status', id: cl.id, status: 'recorded' }), 'a claim is never Recorded');
+  assert.strictEqual(must(await api.post({ action: 'status', id: cl.id, status: 'checked' }), 'a claim can still be Checked').claim.status, 'checked');
+  const both = await lists();
+  assert.strictEqual(both.claims.length, 1); assert.strictEqual(both.leave.length, 1, 'a claim and a leave application of the same person do not mix');
+  must(await api.post({ action: 'delete', id: cl.id }), 'delete the claim');
+  say('leave: statuses');
+
+  // saving the same leave form again replaces it (same person, same start date); a different start date is another application
+  const again = must(await api.post({ action: 'submit', leave: leaveForm({ end: '2026-11-10', days: 3, reason: 'Hometown visit and a wedding' }) }), 'resubmit');
+  assert.strictEqual(again.id, sub.id);
+  assert.strictEqual((await lists()).leave[0].days, 2, 'still the old version while uploading');
+  must(await api.post({ action: 'upload', id: again.id, token: again.token, file: files[0] }), 'upload v2');
+  assert.strictEqual(must(await api.post({ action: 'finish', id: again.id, token: again.token }), 'finish v2').version, 2);
+  const v2 = (await lists()).leave;
+  assert.strictEqual(v2.length, 1); assert.strictEqual(v2[0].days, 3); assert.strictEqual(v2[0].status, 'new'); assert.strictEqual(v2[0].files.length, 1);
+  assert.ok(v2[0].history.some((h) => /Updated by the claimant/.test(h.text)) && v2[0].history.some((h) => h.text === 'Marked as Recorded'), 'the history is kept');
+  const other = await send(leaveForm({ start: '2026-12-01', end: '2026-12-01', days: 1, type: 'sick' }), [files[0], files[2]]);
+  assert.strictEqual((await lists()).leave.length, 2, 'a different start date is another application');
+  say('leave: save again');
+
+  must(await api.post({ action: 'delete', id: sub.id }), 'delete');
+  must(await api.post({ action: 'delete', id: other.sub.id }), 'delete the other');
+  assert.deepStrictEqual((await lists()).leave, []);
+  mustFail(await api.post({ action: 'delete', id: sub.id }), 'delete twice');
+  mustFail(await api.get({ action: 'file', id: 'leave-2026-11-05_../x', file: 'f1' }), 'file by an odd leave id');
+  say('leave: delete');
+}
+
+module.exports = { runProtocol, runAuth, runLeave };
