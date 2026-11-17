@@ -3,15 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WFC Claims &amp; Leave</title>
+<title>Flow – Claims &amp; Leave</title>
 <meta name="theme-color" content="#1f4ad8">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f4ad8'/%3E%3Cpath d='M8 11l3 11 5-8 5 8 3-11' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=8">
+<link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
 <header class="top">
-  <div class="wrap">
-    <div class="brand"><img id="brandLogo" alt="WFC Systems"><span>Claims &amp; Leave</span></div>
+  <div class="wrap headbar">
+    <div class="brand"><img id="brandLogo" alt="WFC Systems"><span class="bname"><b>Flow</b><small>Claims &amp; leave</small></span></div>
+    <nav class="mainnav" role="tablist" aria-label="Sections">
+      <button class="tab on" id="tabClaims" type="button" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span>Claims</span> <span class="cnt" id="cntClaims" hidden></span></button>
+      <button class="tab" id="tabLeave" type="button" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Leave</span> <span class="cnt" id="cntLeave" hidden></span></button>
+    </nav>
     <div class="topbtns">
       <span class="upd" id="updText" aria-live="polite"></span>
       <button class="quiet" id="btnLock" type="button" hidden>Sign out</button>
@@ -29,11 +33,6 @@
 </header>
 
 <main class="wrap">
-  <nav class="tabs" role="tablist" aria-label="Sections">
-    <button class="tab on" id="tabClaims" type="button" role="tab" aria-selected="true">Claims <span class="cnt" id="cntClaims" hidden></span></button>
-    <button class="tab" id="tabLeave" type="button" role="tab" aria-selected="false">Leave <span class="cnt" id="cntLeave" hidden></span></button>
-  </nav>
-
   <div id="banner"></div>
 
   <div class="view" id="viewClaims">
@@ -108,24 +107,39 @@
 </dialog>
 
 <div class="lock" id="lock" hidden>
-  <form class="lockcard" id="lockForm" autocomplete="off">
-    <img id="lockLogo" alt="WFC Systems">
-    <h1>Claims &amp; Leave</h1>
-    <p>Enter the password to see the claims and leave.</p>
-    <label class="f"><span>Password</span><input type="password" id="lockPw" autocomplete="current-password" required></label>
-    <p class="lockerr" id="lockErr" role="alert"></p>
-    <button class="primary" type="submit" id="lockBtn">Open</button>
-  </form>
+  <div class="loginhero">
+    <div class="lhtop"><img id="lockLogo" alt="WFC Systems"></div>
+    <div class="lhmain">
+      <p class="lheyebrow">WFC Systems</p>
+      <div class="lhname" aria-hidden="true">Flow</div>
+      <p class="lhtag">Every claim and leave form, in one place.</p>
+      <ul class="lhlist">
+        <li><span class="lhic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></span><div><b>Claims</b><span class="t">See each claim as it arrives, and mark it checked or paid.</span></div></li>
+        <li><span class="lhic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><div><b>Leave</b><span class="t">Who is away, and when, with the MC attached.</span></div></li>
+      </ul>
+    </div>
+    <p class="lhfoot">Where Flow Connects</p>
+  </div>
+  <div class="loginpane">
+    <form class="logincard" id="lockForm" autocomplete="off">
+      <h1>Welcome back</h1>
+      <p class="lsub">Enter the password to see the claims and leave.</p>
+      <label class="f"><span>Password</span><input type="password" id="lockPw" autocomplete="current-password" required></label>
+      <p class="lockerr" id="lockErr" role="alert"></p>
+      <button class="primary" type="submit" id="lockBtn">Open</button>
+      <div class="lsafe"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><p>This page shows every claim and leave form that was sent in. Keep the password private.</p></div>
+    </form>
+  </div>
 </div>
 
 <div class="toast" id="toast" hidden role="status"></div>
 
-<script src="vendor/jszip.min.js"></script>
-<script src="assets/logo.js"></script>
-<script src="js/config.js?v=2"></script>
-<script src="js/inbox.js?v=4"></script>
-<script src="js/leave.js?v=1"></script>
-<script src="js/sample.js?v=2"></script>
-<script src="js/app.js?v=5"></script>
+<script defer src="vendor/jszip.min.js"></script>
+<script defer src="assets/logo.js"></script>
+<script defer src="js/config.js?v=2"></script>
+<script defer src="js/inbox.js?v=4"></script>
+<script defer src="js/leave.js?v=1"></script>
+<script defer src="js/sample.js?v=2"></script>
+<script defer src="js/app.js?v=5"></script>
 </body>
 </html>
