@@ -25,7 +25,7 @@
       (c.lines || []).forEach((l) => {
         const x = C ? C.lineCarbon(l) : null;
         lines.push({ staff: c.claimant, month: c.month, date: l.date || '', category: l.category || 'Other', shop: l.name || '', receiptNo: l.receiptNo || '',
-          amount: Number(l.amount) || 0, litres: x ? x.litres : 0, kgCO2: x ? x.kg : 0, status: c.status });
+          amount: Number(l.amount) || 0, litres: x ? x.litres : 0, kgCO2: x ? x.kg : 0, estimated: !!(x && x.estimated), status: c.status });
       });
     });
     (leave || []).forEach((v) => lv.push({ staff: v.claimant, type: LEAVE_TYPES.includes(v.type) ? v.type : 'other', start: v.start, end: v.end || v.start, days: Number(v.days) || 0, status: v.status, reason: v.reason || '' }));
@@ -85,7 +85,7 @@ Plan fields:
 - groupBy: how to split the result ("none" for one figure or a list of rows). measure: what to add up: amount (RM), count, kgCO2, litres, days.
 - sort: desc or asc by the measure, or time (oldest first). limit: how many groups or rows to show (1-50; 10 is usual; 5 for "top five").
 - chart: number (one figure), bar (ranking people, shops or categories), column (months or dates, a trend or a comparison over time), pie (shares of a total, at most 6 parts), list (individual rows: "which claims", "who is on leave").
-- title: a short chart title in the question's language.
+- title: a short chart title in the question's language, in sentence case (write CO₂, not CO2).
 
 Dates: use "Today" below. "This month" is today's calendar month, "last month" the one before; a claim for a month is sent early the next month. "This week" and "next week" run Monday to Sunday. Fuel, petrol and minyak mean the category Petrol. Carbon, CO2, emissions and pelepasan karbon mean measure kgCO2 on table lines. For a comparison of two months, filter those two months and group by month.`;
 
@@ -148,6 +148,11 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
     const limit = Math.max(1, Math.min(50, parseInt(plan.limit, 10) || 10));
     const total = r2(rows.reduce((a, r) => a + valueOf(r, measure, table), 0));
     const out = { table, measure, unit: MEASURE_UNIT[measure], total, count: rows.length, groups: [], rows: [], columns: [], empty: !rows.length };
+    if (measure === 'kgCO2' || measure === 'litres') {                  // fuel slips whose litres were not read: their figure comes from the amount
+      const fuel = rows.filter((r) => r.kgCO2 || r.litres);
+      out.fuelSlips = fuel.length;
+      out.estimatedSlips = fuel.filter((r) => r.estimated).length;
+    }
     let g = plan.groupBy || 'none';
     if (g === 'leaveType' && table !== 'leave') g = table === 'lines' ? 'category' : 'none';
     if (g === 'category' && table !== 'lines') g = 'none';
@@ -185,15 +190,27 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
       highlights: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'value'], properties: { label: { type: 'string' }, value: { type: 'string' } } } },
     },
   };
+  const ROW_KIND = { lines: 'receipt lines', claims: 'monthly claims', leave: 'leave applications' };
   const ANSWER_SYSTEM = `You answer a manager's question about their company's expense claims and leave, for a dashboard that shows your answer above a chart.
-Use only the figures in the result you are given. Copy numbers exactly as written there (RM amounts with two decimals). Never add, average or recalculate anything yourself; a "change" in the result is already worked out and may be quoted.
-- answer: 1 to 3 short sentences in the requested language, plain words for a busy boss, the key figure first. No markdown, no bullet points. If the result is empty, say plainly that nothing matches.
+Use only the figures in the result you are given. Copy figures exactly as written there (RM amounts with two decimals and thousands commas, such as RM 1,575.40). Never add, average or recalculate anything yourself; a "change" in the result is already worked out and may be quoted.
+- answer: 1 to 3 short sentences in the requested language, plain words for a busy boss, the key figure first. No markdown, no bullet points. If the result is empty, say plainly that nothing matches. rowsAre says what was counted: receipt lines are receipts (resit, 收据), not claims; a claim is one person's monthly form. If estimatedFromAmount is given, add a few words that those slips' litres were worked out from the amount paid, so the figure is an estimate.
 - speech: one or two sentences in the same language for reading aloud: say amounts as words a person would speak (English "718 ringgit 91 sen", Malay "718 ringgit 91 sen", Chinese "718.91令吉"), no symbols or abbreviations.
 - highlights: up to 3 label and value pairs taken from the result (for example "Total" and "RM 718.91"), labels in the requested language.`;
 
+  /* figures as the boss should read them ("RM 1,575.40", "827.3 kg CO₂e"), so Claude copies them as they are */
+  function shown(v, unit) {
+    const n = Number(v) || 0;
+    if (unit === 'RM') return 'RM ' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (unit === 'kg CO₂e') return n.toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' kg CO₂e';
+    if (unit === 'litres') return n.toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' litres';
+    if (unit === 'days') return `${n} ${n === 1 ? 'day' : 'days'}`;
+    return n.toLocaleString('en-US');
+  }
+
   function answerRequest(question, plan, result) {
     const lines = [`Requested language: ${LANG_NAME[plan.lang] || 'English'}`, `Question: ${question}`, `Chart title: ${plan.title}`,
-      `Result: ${JSON.stringify({ measure: result.measure, unit: result.unit, total: result.total, rowsMatching: result.count, groupedBy: result.groupedBy || 'none', groups: result.groups.map((x) => ({ label: x.label, value: x.value })), groupCount: result.groupCount, change: result.change || null, rows: result.rows.slice(0, 25) })}`];
+      `Result: ${JSON.stringify({ measure: result.measure, unit: result.unit, total: shown(result.total, result.unit), rowsMatching: result.count, rowsAre: ROW_KIND[result.table] || 'records',
+        estimatedFromAmount: result.estimatedSlips ? `${result.estimatedSlips} of ${result.fuelSlips} fuel slips` : undefined, groupedBy: result.groupedBy || 'none', groups: result.groups.map((x) => ({ label: x.label, value: shown(x.value, result.unit) })), groupCount: result.groupCount, change: result.change || null, rows: result.rows.slice(0, 25) })}`];
     return {
       system: ANSWER_SYSTEM, max_tokens: 1200,
       output_config: { effort: 'low', format: { type: 'json_schema', schema: ANSWER_SCHEMA } },

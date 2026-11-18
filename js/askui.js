@@ -37,13 +37,15 @@
   const money = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function fmt(v, unit) {
     if (unit === 'RM') return money(v);
-    if (unit === 'kg CO₂e') return C ? C.weight(v) + ' CO₂e' : Math.round(v) + ' kg CO₂e';
+    if (unit === 'kg CO₂e') return (v >= 1000 && C ? C.weight(v) : (Math.round(v * 10) / 10).toLocaleString('en-US') + ' kg') + ' CO₂e';   // one decimal, as in the answer above it
     if (unit === 'litres') return (Math.round(v * 10) / 10).toLocaleString('en-US') + ' L';
     if (unit === 'days') return `${v} ${v === 1 ? 'day' : 'days'}`;
     return (Number(v) || 0).toLocaleString('en-US');
   }
   const COL = { staff: 'Staff', date: 'Date', category: 'Type', shop: 'Shop', receiptNo: 'Receipt no.', amount: 'Amount', litres: 'Litres', kgCO2: 'kg CO₂e', type: 'Leave', start: 'From', end: 'To', days: 'Days', status: 'Status', month: 'Month', total: 'Total', lines: 'Lines' };
-  const cell = (c, v) => (c === 'amount' || c === 'total' ? money(v) : c === 'kgCO2' ? Math.round(v) : c === 'litres' ? (v ? (Math.round(v * 10) / 10) + ' L' : '–') : v == null || v === '' ? '–' : String(v));
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const STATUS = { new: 'New', checked: 'Checked', paid: 'Paid', question: 'Has a question', recorded: 'Recorded' };
+  const cell = (c, v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${+v.slice(8)} ${MON[+v.slice(5, 7) - 1]} ${v.slice(0, 4)}` : c === 'status' ? (STATUS[v] || v || '–') : c === 'amount' || c === 'total' ? money(v) : c === 'kgCO2' ? (Math.round(v * 10) / 10).toLocaleString('en-US') : c === 'litres' ? (v ? (Math.round(v * 10) / 10) + ' L' : '–') : v == null || v === '' ? '–' : String(v));
 
   /* ---------- charts ---------- */
   const PALETTE = ['#1f4ad8', '#0f9fa0', '#3d8bff', '#16a34a', '#7c3aed', '#b45309'];
@@ -94,7 +96,7 @@
     let kind = plan.chart;
     if (kind === 'list' || (!result.groups.length && kind !== 'number')) return table(result);
     if (kind === 'number' && result.groups.length > 1) kind = 'bar';
-    if (kind === 'number' || !result.groups.length) return h('div', { class: 'af-big' }, h('b', { text: fmt(result.total, result.unit) }), h('span', { text: `${result.count} record${result.count === 1 ? '' : 's'}` }));
+    if (kind === 'number' || !result.groups.length) return h('div', { class: 'af-big' }, h('b', { text: fmt(result.total, result.unit) }), h('span', { text: plan.lang === 'ms' ? `${result.count} rekod` : plan.lang === 'zh' ? `${result.count} 条记录` : `${result.count} record${result.count === 1 ? '' : 's'}` }));
     if (kind === 'column') return columns(result.groups, result.unit, green);
     if (kind === 'pie') return donut(result.groups, result.unit);
     return bars(result.groups, result.unit, green);
@@ -227,6 +229,22 @@
     }
   }
 
+  /* "From 11 receipts in your records.", in the language of the question */
+  function sourceLine(plan, result) {
+    const n = result.count, e = result.estimatedSlips, f = result.fuelSlips, sample = S().sample;
+    const some = e && e !== f;
+    if (plan.lang === 'ms') {
+      const what = { leave: 'permohonan cuti', claims: 'tuntutan' }[plan.table] || 'resit';
+      return `Daripada ${n} ${what} dalam rekod anda${sample ? ' (data contoh)' : ''}.` + (e ? ` Liter ${some ? `bagi ${e} daripada ${f} slip` : 'slip minyak'} dikira daripada jumlah bayaran.` : '');
+    }
+    if (plan.lang === 'zh') {
+      const what = { leave: '份请假申请', claims: '份申领' }[plan.table] || '张收据';
+      return `根据记录中的 ${n} ${what}${sample ? '（示例数据）' : ''}。` + (e ? `${some ? `其中 ${e} 张油单` : '油单'}的升数按付款金额估算。` : '');
+    }
+    const what = { leave: 'leave application', claims: 'claim' }[plan.table] || 'receipt';
+    return `From ${n} ${what}${n === 1 ? '' : 's'} in your records${sample ? ' (sample data)' : ''}.` + (e ? ` Litres on ${some ? `${e} of ${f} fuel slips` : f === 1 ? 'the fuel slip' : `all ${f} fuel slips`} worked out from the amount paid.` : '');
+  }
+
   function paintAnswer(card, q, out, spoken) {
     const { plan, result, answer } = out;
     card.textContent = '';
@@ -236,8 +254,7 @@
     const chart = chartFor(plan, result);
     if (chart) card.append(h('figure', { class: 'af-fig' }, plan.title ? h('figcaption', { text: plan.title }) : null, chart));
     if (!result.empty && plan.table !== 'none') {
-      const what = plan.table === 'leave' ? 'leave application' : plan.table === 'claims' ? 'claim' : 'claim line';
-      card.append(h('div', { class: 'af-src', text: `From ${result.count} ${what}${result.count === 1 ? '' : 's'} in your records${S().sample ? ' (sample data)' : ''}.` }));
+      card.append(h('div', { class: 'af-src', text: sourceLine(plan, result) }));
     }
     if (spoken) speak(answer.speech || answer.answer, plan.lang);
   }

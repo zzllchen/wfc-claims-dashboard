@@ -474,6 +474,8 @@ body.af-open { overflow: hidden; }
 .af-table td { padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .af-table tr:last-child td { border-bottom: 0; }
 .af-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.af-table tbody tr { cursor: default; }
+.af-table tbody tr:hover { background: none; }
 .af-src { color: var(--faint); font-size: 12px; }
 .af-tip { align-self: center; color: var(--muted); font-size: 13px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; }
 .af-ft { border-top: 1px solid var(--line); padding: 12px 16px 14px; background: #fff; display: grid; gap: 10px; }
@@ -502,4 +504,12 @@ body.af-open { overflow: hidden; }
   .af-pie ul { width: 100%; }
   .askbtn span { display: none; }
   .askbtn { width: 40px; padding: 0; justify-content: center; }
+  /* the claims list turns tables into cards on phones; Ask Flow's tables stay tables (they scroll sideways instead) */
+  .af-table { display: table; }
+  .af-table thead { display: table-header-group; }
+  .af-table tbody { display: table-row-group; }
+  .af-table tbody tr { display: table-row; padding: 0; border-bottom: 0; }
+  .af-table tbody td { display: table-cell; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; grid-column: auto; grid-row: auto; text-align: left; justify-self: auto; }
+  .af-table tbody td.num { text-align: right; }
+  .af-table tbody tr:last-child td { border-bottom: 0; }
 }
