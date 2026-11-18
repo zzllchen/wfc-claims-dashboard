@@ -43,7 +43,7 @@ const plan = (over) => Object.assign({ lang: 'en', table: 'lines', filters: { st
     assert.strictEqual(r.count, 4, 'toll and medical lines are not counted for carbon');
     assert.strictEqual(r.fuelSlips, 4); assert.strictEqual(r.estimatedSlips, 1);     // the slip with no litres is worked out from its amount
     const ar = A.answerRequest('q', plan({ measure: 'kgCO2' }), r).messages[0].content;
-    assert.ok(/"rowsAre":"receipt lines"/.test(ar) && /"estimatedFromAmount":"1 of 4 fuel slips"/.test(ar));
+    assert.ok(/"rowsAre":"receipt lines"/.test(ar) && /"estimatedFromAmount":\{"slips":1,"ofFuelSlips":4\}/.test(ar));
   });
   await ok('who is on leave next week: any overlap with the period, as a list', () => {
     const r = A.run(plan({ table: 'leave', filters: { dateFrom: '2026-11-23', dateTo: '2026-11-29' }, chart: 'list', sort: 'time', measure: 'days' }), t);

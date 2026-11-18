@@ -194,9 +194,9 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
   const ROW_KIND = { lines: 'receipt lines', claims: 'monthly claims', leave: 'leave applications' };
   const ANSWER_SYSTEM = `You answer a manager's question about their company's expense claims and leave, for a dashboard that shows your answer above a chart.
 Use only the figures in the result you are given. Copy figures exactly as written there (RM amounts with two decimals and thousands commas, such as RM 1,575.40). Never add, average or recalculate anything yourself; a "change" in the result is already worked out and may be quoted.
-- answer: 1 to 3 short sentences in the requested language, plain words for a busy boss, the key figure first. No markdown, no bullet points. If the result is empty, say plainly that nothing matches. rowsAre says what was counted: receipt lines are receipts (resit, 收据), not claims; a claim is one person's monthly form. If estimatedFromAmount is given, add a few words that those slips' litres were worked out from the amount paid, so the figure is an estimate.
+- answer: 1 to 3 short sentences in the requested language, plain words for a busy boss, the key figure first. No markdown, no bullet points. If the result is empty, say plainly that nothing matches. rowsAre says what was counted: receipt lines are receipts (resit, 收据), not claims; a claim is one person's monthly form. If estimatedFromAmount is given, add a few words in the answer that those slips' litres were worked out from the amount paid, so the figure is an estimate (not as a highlight).
 - speech: one or two sentences in the same language for reading aloud: say amounts as words a person would speak (English "718 ringgit 91 sen", Malay "718 ringgit 91 sen", Chinese "718.91令吉"), no symbols or abbreviations.
-- highlights: up to 3 label and value pairs taken from the result (for example "Total" and "RM 718.91"), labels in the requested language.`;
+- highlights: up to 3 label and value pairs taken from the result (for example "Total" and "RM 718.91"), each value a short figure, name or date; labels and any words in values in the requested language.`;
 
   /* figures as the boss should read them ("RM 1,575.40", "827.3 kg CO₂e"), so Claude copies them as they are */
   function shown(v, unit) {
@@ -211,7 +211,7 @@ Use only the figures in the result you are given. Copy figures exactly as writte
   function answerRequest(question, plan, result) {
     const lines = [`Requested language: ${LANG_NAME[plan.lang] || 'English'}`, `Question: ${question}`, `Chart title: ${plan.title}`,
       `Result: ${JSON.stringify({ measure: result.measure, unit: result.unit, total: shown(result.total, result.unit), rowsMatching: result.count, rowsAre: ROW_KIND[result.table] || 'records',
-        estimatedFromAmount: result.estimatedSlips ? `${result.estimatedSlips} of ${result.fuelSlips} fuel slips` : undefined, groupedBy: result.groupedBy || 'none', groups: result.groups.map((x) => ({ label: x.label, value: shown(x.value, result.unit) })), groupCount: result.groupCount, change: result.change || null, rows: result.rows.slice(0, 25) })}`];
+        estimatedFromAmount: result.estimatedSlips ? { slips: result.estimatedSlips, ofFuelSlips: result.fuelSlips } : undefined, groupedBy: result.groupedBy || 'none', groups: result.groups.map((x) => ({ label: x.label, value: shown(x.value, result.unit) })), groupCount: result.groupCount, change: result.change || null, rows: result.rows.slice(0, 25) })}`];
     return {
       system: ANSWER_SYSTEM, max_tokens: 1200,
       output_config: { effort: 'low', format: { type: 'json_schema', schema: ANSWER_SCHEMA } },
