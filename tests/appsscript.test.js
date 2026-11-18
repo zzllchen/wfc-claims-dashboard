@@ -210,5 +210,49 @@ function fakeGoogle() {
   console.log('  ok  relay: retries without the effort setting');
   delete fake.props.CLAUDE_DAY;
 
+  // ---- Ask Flow: questions about the claims, from the dashboard only (it reads company data) ----
+  const PW = fake.props.DASH_KEY;
+  const SCHEMA = { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false };
+  const askReq = (over) => Object.assign({ system: 'You answer questions about expense claims.', max_tokens: 9000, output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } }, model: 'claude-haiku-5-5',
+    messages: [{ role: 'user', content: 'Question: how much fuel in October?\nData: ...' }] }, over);
+  const askFlow = (over, key) => api.post({ action: 'ask', key: key === undefined ? PW : key, request: askReq(over) });
+  assert.strictEqual((await api.get({ action: 'ping' })).ask, true, 'ping says Ask Flow is on');
+  const a0 = fake.fetches.length;
+  refused(await askFlow({}, ''), 401, 'Ask Flow without the password');
+  refused(await askFlow({}, 'wrong'), 401, 'Ask Flow with a wrong password');
+  assert.strictEqual(fake.fetches.length, a0, 'nothing reaches Anthropic without the password');
+  fake.respond(() => ({ code: 200, body: JSON.stringify({ content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: '{"answer":"RM 718.91"}' }], stop_reason: 'end_turn', usage: { input_tokens: 900, output_tokens: 40 }, model: 'claude-opus-5-5', id: 'msg_y' }) }));
+  const asked = await askFlow();
+  assert.strictEqual(asked.ok, true, JSON.stringify(asked).slice(0, 200));
+  assert.strictEqual(asked.reply.content[1].text, '{"answer":"RM 718.91"}');
+  assert.ok(!JSON.stringify(asked).includes('msg_y'));
+  const q = fake.fetches[fake.fetches.length - 1];
+  assert.strictEqual(q.payload.model, 'claude-opus-5-5', 'the model is fixed on the server');
+  assert.strictEqual(q.payload.max_tokens, 3000, 'the answer length is capped');
+  assert.deepStrictEqual(q.payload.output_config, { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } });
+  assert.strictEqual(q.payload.fallbacks, 'default'); assert.strictEqual(q.opts.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
+  assert.strictEqual(q.payload.messages[0].content, 'Question: how much fuel in October?\nData: ...');
+  console.log('  ok  Ask Flow: password needed, model and length fixed, structured answer passed on');
+
+  const a1 = fake.fetches.length;
+  refused(await askFlow({ messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: photo } }] }] }), 400, 'a photo');
+  refused(await askFlow({ messages: [{ role: 'user', content: 'x'.repeat(60001) }] }), 400, 'too much data');
+  refused(await askFlow({ messages: [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }] }), 400, 'a conversation');
+  refused(await askFlow({ system: '' }), 400, 'no instructions');
+  refused(await askFlow({ output_config: { format: { type: 'text' } } }), 400, 'an odd format');
+  assert.strictEqual(fake.fetches.length, a1, 'none of those reached Anthropic');
+  console.log('  ok  Ask Flow: one plain-text question at a time');
+
+  // an older Anthropic setup that does not know "fallbacks": asked again without it
+  const a2 = fake.fetches.length;
+  fake.respond((n, payload) => (payload.fallbacks ? { code: 400, body: JSON.stringify({ error: { message: 'fallbacks: Extra inputs are not permitted' } }) } : { code: 200, body: JSON.stringify({ content: [{ type: 'text', text: '{"answer":"ok"}' }], stop_reason: 'end_turn', usage: {}, model: 'claude-opus-5-5' }) }));
+  assert.strictEqual((await askFlow()).ok, true);
+  assert.strictEqual(fake.fetches.length - a2, 2); assert.ok(!('fallbacks' in fake.fetches[fake.fetches.length - 1].payload)); assert.ok(!fake.fetches[fake.fetches.length - 1].opts.headers['anthropic-beta']);
+  // its own daily cap, separate from the receipt reader's
+  fake.respond(null); fake.props.ASK_DAILY_CAP = '1'; delete fake.props.ASK_DAY;
+  assert.strictEqual((await askFlow()).ok, true); refused(await askFlow(), 429, 'over the Ask Flow cap');
+  delete fake.props.ASK_DAILY_CAP; delete fake.props.ASK_DAY;
+  console.log('  ok  Ask Flow: retries without fallbacks, has its own daily cap');
+
   console.log('Apps Script tests passed');
 })().catch((e) => { console.error('FAILED:', e); process.exit(1); });

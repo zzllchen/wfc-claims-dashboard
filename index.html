@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
 <header class="top">
@@ -27,6 +27,7 @@
     </nav>
     <div class="topbtns">
       <span class="upd" id="updText" aria-live="polite"></span>
+      <button class="askbtn" id="btnAsk" type="button" title="Ask a question about the claims and leave"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15v5M16.5 17.5h5"/></svg><span>Ask Flow</span></button>
       <button class="quiet" id="btnLock" type="button" hidden>Sign out</button>
       <button class="ghost" id="btnRefresh" type="button">Refresh</button>
       <div class="menuwrap">
@@ -34,6 +35,7 @@
         <div class="menu" id="exportMenu" hidden>
           <button type="button" data-export="claims" data-view="claims">Claims list <small>one row per claim</small></button>
           <button type="button" data-export="lines" data-view="claims">Every line <small>one row per receipt line</small></button>
+          <button type="button" data-export="carbon" data-view="claims">Carbon (business travel) <small>one row per fuel slip, kg CO₂e</small></button>
           <button type="button" data-export="leave" data-view="leave" hidden>Leave list <small>one row per application</small></button>
         </div>
       </div>
@@ -71,7 +73,10 @@
         <div class="empty" id="empty" hidden></div>
         <div class="tfoot" id="tfoot"></div>
       </section>
-      <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
+      <div class="side">
+        <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
+        <aside class="card carbon" id="carbon" aria-label="Carbon from business travel"></aside>
+      </div>
     </div>
   </div>
 
@@ -146,9 +151,12 @@
 <script defer src="vendor/jszip.min.js"></script>
 <script defer src="assets/logo.js"></script>
 <script defer src="js/config.js?v=2"></script>
-<script defer src="js/inbox.js?v=4"></script>
+<script defer src="js/inbox.js?v=5"></script>
 <script defer src="js/leave.js?v=1"></script>
+<script defer src="js/carbon.js?v=1"></script>
+<script defer src="js/askflow.js?v=1"></script>
+<script defer src="js/askui.js?v=2"></script>
 <script defer src="js/sample.js?v=2"></script>
-<script defer src="js/app.js?v=5"></script>
+<script defer src="js/app.js?v=6"></script>
 </body>
 </html>

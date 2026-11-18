@@ -11,7 +11,7 @@
    No login yet (on purpose, for the demo): anyone who has the web app address can read and add claims.
    The setup steps are in README.md, "Put it online (Google)". */
 
-var VERSION = 2;
+var VERSION = 3;
 var MAX_LINES = 60;                                   // the claim form has 35 rows
 var MAX_FILE = 8 * 1024 * 1024;                      // bytes per file (Apps Script copes with about this much per request)
 // a claim goes New > Checked > Paid; a leave application goes New > Recorded (the office filled in the balance). Either can be "Has a question".
@@ -45,7 +45,7 @@ function route_(method, query, body) {
     var params = method === 'POST' ? (body || {}) : query;
     var action = params.action;
     var reads = { ping: 1, list: 1, file: 1 };                 // a read may come by GET or POST; a change only by POST
-    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_ };
+    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_ };
     if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action])) throw fail_('Unknown action.');
     needKey_(action, params);
     // changes to a claim's record are one at a time; uploads of different files can run side by side
@@ -99,7 +99,10 @@ function cleanClaim_(c) {
     var l = src[i] || {};
     var amount = round2_(Math.max(0, Number(l.amount) || 0));
     total += amount;
-    lines.push({ no: i + 1, category: str_(l.category, 40), date: /^\d{4}-\d{2}-\d{2}$/.test(l.date) ? l.date : '', name: str_(l.name, 120), receiptNo: str_(l.receiptNo, 60), amount: amount });
+    var line = { no: i + 1, category: str_(l.category, 40), date: /^\d{4}-\d{2}-\d{2}$/.test(l.date) ? l.date : '', name: str_(l.name, 120), receiptNo: str_(l.receiptNo, 60), amount: amount };
+    var litres = Number(l.litres);         // a fuel line may carry the litres pumped and the fuel type: the dashboard works out the carbon of business travel from them
+    if (litres > 0 && litres < 300) { line.litres = Math.round(litres * 1000) / 1000; line.fuel = l.fuel === 'diesel' ? 'diesel' : 'petrol'; }
+    lines.push(line);
   }
   if (!lines.length) throw fail_('The claim has no lines.');
   return { claimant: claimant, month: month, monthLabel: monthLabel_(month), total: round2_(total), lines: lines,
@@ -214,7 +217,7 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_() }; }
 
 /* ---------- Claude relay: the Claim Builder asks here to read a receipt photo, so nobody pastes a key ----------
    The Anthropic key lives only in the script properties (CLAUDE_KEY), never in a web page. Whatever the page asks for, the model is fixed here,
@@ -228,16 +231,17 @@ var CLAUDE_MAX_CHARS = 2400000;                      // the photo as base64, abo
 
 function claudeOn_() { return !!PropertiesService.getScriptProperties().getProperty('CLAUDE_KEY'); }
 
-function claudeCount_() {
+function claudeCount_(dayProp, capProp, capDefault) {
+  dayProp = dayProp || 'CLAUDE_DAY';
   var props = PropertiesService.getScriptProperties();
-  var cap = parseInt(props.getProperty('CLAUDE_DAILY_CAP'), 10) || CLAUDE_DAILY_CAP;
+  var cap = parseInt(props.getProperty(capProp || 'CLAUDE_DAILY_CAP'), 10) || capDefault || CLAUDE_DAILY_CAP;
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    var today = new Date().toISOString().slice(0, 10), cur = String(props.getProperty('CLAUDE_DAY') || '').split(':');
+    var today = new Date().toISOString().slice(0, 10), cur = String(props.getProperty(dayProp) || '').split(':');
     var n = cur[0] === today ? (parseInt(cur[1], 10) || 0) : 0;
     if (n >= cap) throw fail_("The company's Claude limit for today is used up.", 429);
-    props.setProperty('CLAUDE_DAY', today + ':' + (n + 1));
+    props.setProperty(dayProp, today + ':' + (n + 1));
   } finally { try { lock.releaseLock(); } catch (e) { /* already released */ } }
 }
 
@@ -275,6 +279,49 @@ function claude_(b) {
     if (res.code === 401 || res.code === 403) throw fail_('The company Claude key was not accepted. Tell whoever looks after the inbox.', 502);
     if (res.code === 429 || /credit|billing|balance/i.test(res.text)) throw fail_('Claude is busy, or the company account has no credit left.', 502);
     throw fail_('Claude could not read that photo (HTTP ' + res.code + ').', 502);
+  }
+  var j = res.json;
+  return { ok: true, reply: { content: j.content, stop_reason: j.stop_reason, usage: j.usage, model: j.model } };
+}
+
+/* ---------- Ask Flow: questions about the claims and leave, from the dashboard ----------
+   Only with the dashboard password (it reads company data). The page sends the instructions and the question as plain text; the model, the
+   answer length and a daily cap are fixed here. No photos, no conversation, nothing but one question at a time. */
+var ASK_MODEL = 'claude-opus-5-5';                   // script property ASK_MODEL changes it
+var ASK_MAX_TOKENS = 3000;
+var ASK_DAILY_CAP = 300;                             // questions a day; script property ASK_DAILY_CAP changes it (each question is two calls)
+
+function callAsk_(payload, key, beta) {
+  var headers = { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
+  if (beta) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';      // if the model declines for safety, Anthropic retries on a suitable model
+  var res = UrlFetchApp.fetch(CLAUDE_URL, { method: 'post', contentType: 'application/json', headers: headers, payload: JSON.stringify(payload), muteHttpExceptions: true });
+  var code = res.getResponseCode(), text = res.getContentText(), j = null;
+  try { j = JSON.parse(text); } catch (e) { j = null; }
+  if (code === 400 && beta && /fallback/i.test(text)) { var p = JSON.parse(JSON.stringify(payload)); delete p.fallbacks; return callAsk_(p, key, false); }
+  return { code: code, text: text, json: j };
+}
+
+function ask_(b) {
+  var props = PropertiesService.getScriptProperties(), key = props.getProperty('CLAUDE_KEY');
+  if (!key) throw fail_('Claude is not set up on the inbox.', 503);
+  var r = (b && b.request) || {}, m = r.messages;
+  if (!(m instanceof Array) || m.length !== 1 || !m[0] || m[0].role !== 'user' || typeof m[0].content !== 'string' || !m[0].content || m[0].content.length > 60000) throw fail_('Bad request.');
+  if (typeof r.system !== 'string' || !r.system || r.system.length > 20000) throw fail_('Bad request.');
+  var oc = { effort: /^(low|medium|high)$/.test(String(r.output_config && r.output_config.effort)) ? r.output_config.effort : 'low' };
+  var fmt = r.output_config && r.output_config.format;
+  if (fmt != null) {
+    if (typeof fmt !== 'object' || fmt.type !== 'json_schema' || !fmt.schema || typeof fmt.schema !== 'object' || JSON.stringify(fmt.schema).length > 20000) throw fail_('Bad request.');
+    oc.format = { type: 'json_schema', schema: fmt.schema };
+  }
+  claudeCount_('ASK_DAY', 'ASK_DAILY_CAP', ASK_DAILY_CAP);
+  var payload = { model: props.getProperty('ASK_MODEL') || ASK_MODEL, max_tokens: Math.min(parseInt(r.max_tokens, 10) || ASK_MAX_TOKENS, ASK_MAX_TOKENS),
+    system: r.system, messages: [{ role: 'user', content: m[0].content }], output_config: oc, fallbacks: 'default' };
+  var res = callAsk_(payload, key, true);
+  if (res.code !== 200 || !res.json) {
+    // our own words, never Anthropic's text: nothing about the key can leak through an error
+    if (res.code === 401 || res.code === 403) throw fail_('The company Claude key was not accepted. Tell whoever looks after the inbox.', 502);
+    if (res.code === 429 || /credit|billing|balance/i.test(res.text)) throw fail_('Claude is busy, or the company account has no credit left.', 502);
+    throw fail_('Claude could not answer just now (HTTP ' + res.code + '). Please try again.', 502);
   }
   var j = res.json;
   return { ok: true, reply: { content: j.content, stop_reason: j.stop_reason, usage: j.usage, model: j.model } };

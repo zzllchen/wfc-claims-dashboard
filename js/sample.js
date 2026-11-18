@@ -29,7 +29,9 @@
     const now = Date.now();
     return SPEC.map(([claimant, back, status, hours, rows]) => {
       const mo = monthBack(back);
-      const lines = rows.map(([category, day, name, receiptNo, amount], i) => ({ no: i + 1, category, date: `${mo.key}-${pad(Math.min(day, 28))}`, name, receiptNo, amount }));
+      // Budi95 slips (six-character invoice numbers) carry their litres; the others are left for the dashboard to estimate from the amount
+      const lines = rows.map(([category, day, name, receiptNo, amount], i) => Object.assign({ no: i + 1, category, date: `${mo.key}-${pad(Math.min(day, 28))}`, name, receiptNo, amount },
+        category === 'Petrol' && /^[0-9a-f]{6}$/.test(receiptNo) ? { litres: Math.round(amount / 1.99 * 1000) / 1000, fuel: 'petrol' } : {}));
       const at = new Date(now - hours * 3600e3).toISOString();
       const history = [{ at, text: 'Received' }];
       if (status !== 'new') history.push({ at: new Date(now - hours * 3600e3 / 2).toISOString(), text: `Marked as ${({ checked: 'Checked', paid: 'Paid', question: 'Has a question' })[status]}` });

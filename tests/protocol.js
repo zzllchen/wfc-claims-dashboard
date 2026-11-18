@@ -7,7 +7,7 @@ const b64 = (s) => Buffer.from(s).toString('base64');
 const claim = (extra) => Object.assign({
   claimant: 'Chin Zhi Liang', month: '2026-10', total: 9999, from: 'edward.wfcsystems@gmail.com', to: 'agnes@yutech.com.my', subject: 'Claim - October 2026',
   lines: [
-    { category: 'Petrol', date: '2026-10-05', name: 'Kejayaan Teguh Enterprise', receiptNo: 'a1b2c3', amount: 60 },
+    { category: 'Petrol', date: '2026-10-05', name: 'Kejayaan Teguh Enterprise', receiptNo: 'a1b2c3', amount: 60, litres: 30.1505, fuel: 'petrol' },
     { category: 'Toll', date: '2026-10-31', name: "Touch 'n Go", receiptNo: '1130739887', amount: 27.4 },
     { category: 'Medical', date: '2026-10-12', name: 'Klinik Putra Care', receiptNo: '5521', amount: 75.1 },
   ],
@@ -63,6 +63,8 @@ async function runProtocol(api, log) {
   assert.strictEqual(c.total, 162.5, 'the total is added up by the inbox, not taken from the sender');
   assert.strictEqual(c.status, 'new'); assert.strictEqual(c.version, 1); assert.strictEqual(c.lines.length, 3);
   assert.strictEqual(c.lines[0].no, 1); assert.strictEqual(c.from, 'edward.wfcsystems@gmail.com');
+  assert.strictEqual(c.lines[0].litres, 30.151, 'a fuel line keeps its litres (3 decimals), for the carbon figures'); assert.strictEqual(c.lines[0].fuel, 'petrol');
+  assert.ok(!('litres' in c.lines[1]) && !('fuel' in c.lines[1]), 'a line with no litres has no fuel fields');
   assert.strictEqual(c.files.length, 3);
   assert.deepStrictEqual(c.files.find((f) => f.id === 'f2'), Object.assign({}, c.files.find((f) => f.id === 'f2'), { kind: 'receipt', line: 1, mime: 'image/jpeg', size: 10, name: 'Receipt 01 - Petrol - 05-10-2026.jpg' }));
   const leak = JSON.stringify(list);

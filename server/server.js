@@ -36,6 +36,12 @@ const mimeOf = (name, given) => {
 const emailOf = (v) => (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(v || '').trim()) ? String(v).trim().slice(0, 120) : '');
 function fail(message, code) { const e = new Error(message); e.userMessage = message; e.code = code || 400; return e; }
 
+/* a fuel line may carry the litres pumped and the fuel type (from the slip): the dashboard works out the carbon of business travel from them */
+function fuelOf(l) {
+  const litres = Number(l && l.litres);
+  if (!(litres > 0 && litres < 300)) return {};
+  return { litres: Math.round(litres * 1000) / 1000, fuel: l.fuel === 'diesel' ? 'diesel' : 'petrol' };
+}
 function cleanClaim(c) {
   c = c || {};
   const claimant = str(c.claimant, 80);
@@ -46,6 +52,7 @@ function cleanClaim(c) {
   const lines = (Array.isArray(c.lines) ? c.lines : []).map((l, i) => ({
     no: i + 1, category: str(l && l.category, 40), date: /^\d{4}-\d{2}-\d{2}$/.test(l && l.date) ? l.date : '',
     name: str(l && l.name, 120), receiptNo: str(l && l.receiptNo, 60), amount: round2(Math.max(0, Number(l && l.amount) || 0)),
+    ...fuelOf(l),
   }));
   if (!lines.length) throw fail('The claim has no lines.');
   return { claimant, month, monthLabel: monthLabel(month), total: round2(lines.reduce((a, l) => a + l.amount, 0)), lines,
@@ -105,9 +112,10 @@ function makeApi(dataDir, opts) {
   const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude'];             // what the Claim Builder does: never needs the password
 
   const actions = {
-    ping() { return { ok: true, service: 'wfc-claims', version: 2, where: 'local', auth: !!password, claude: false, leave: true }; },
+    ping() { return { ok: true, service: 'wfc-claims', version: 3, where: 'local', auth: !!password, claude: false, leave: true, ask: false }; },
 
     claude() { throw fail('Claude is not set up on the local inbox.', 503); },       // only the Google inbox has the relay
+    ask() { throw fail('Ask Flow works with the Google inbox only.', 503); },          // the same: the company Claude key lives there (the password still applies first)
 
     list() {
       const all = db.all().map(publicClaim).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));

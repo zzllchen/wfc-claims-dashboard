@@ -159,7 +159,7 @@
   /* ---------- drawing the page ---------- */
   function render() {
     paintTop(); paintTabs(); paintBanner();
-    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintSpend(); }
+    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintSpend(); paintCarbon(); }
     if (S.open) {                  // the panel is only redrawn when its claim changed, so a note being typed is not wiped by the 20-second refresh
       const c = find(S.open);
       if (!c) closeDrawer(); else if (S.drawerSig !== sigOf(c)) paintDrawer(true);
@@ -302,6 +302,32 @@
         h('div', { class: 'bt' }, icon(k), h('span', { class: 'bn', text: KIND_LABEL[k] }), h('span', { class: 'ba', text: money(v) }), h('span', { class: 'bp', text: Math.round(v / sum * 100) + '%' })),
         h('div', { class: 'track' }, fill));
     })));
+  }
+
+  /* the carbon of business travel, from the litres on the fuel slips of the claims in view (js/carbon.js) */
+  const LEAF = svg('<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>');
+  const carbonText = (l) => { const x = window.Carbon && window.Carbon.lineCarbon(l); return x ? `${x.estimated ? '≈ ' : ''}${x.litres.toFixed(1)} L · ${Math.round(x.kg)} kg CO₂e` : ''; };
+  function paintCarbon() {
+    const box = $('#carbon'); if (!box || !window.Carbon) return;
+    const C = window.Carbon, s = C.summarise(all().filter(inView));
+    const scope = [S.f.month === 'all' ? 'All months' : (all().find((c) => c.month === S.f.month) || {}).monthLabel, S.f.staff === 'all' ? null : S.f.staff, S.f.status === 'all' ? null : STATUS[S.f.status]].filter(Boolean).join(' · ');
+    box.textContent = '';
+    const title = h('h2', {}); title.innerHTML = LEAF; title.append('Carbon from business travel');
+    box.append(h('div', {}, title, h('div', { class: 'sub', text: scope })));
+    if (!s.slips) { box.append(h('div', { class: 'none', text: 'No fuel claims in this view.' })); return; }
+    const [num, unit] = C.weight(s.kg).split(' ');
+    box.append(h('div', { class: 'co2' }, h('b', { text: num }), h('span', { text: unit + ' CO₂e' })));
+    box.append(h('div', { class: 'from', text: `from ${s.litres.toLocaleString('en-US')} litres of fuel on ${s.slips} slip${s.slips > 1 ? 's' : ''}` + (s.estimated ? ` · ${s.estimated} estimated from the amount` : '') }));
+    box.append(h('span', { class: 'scope', text: C.SCOPE }));
+    // who (or, for one person, which months) drove the most
+    const one = S.f.staff !== 'all';
+    const parts = (one ? s.byMonth.map((m) => ({ name: m.label, kg: m.kg })) : s.byStaff).slice(0, 6);
+    const top = Math.max.apply(null, parts.map((p) => p.kg)) || 1;
+    box.append(h('div', { class: 'bars' }, parts.map((p) => {
+      const fill = h('div', { class: 'fill' }); fill.style.width = (p.kg / top * 100).toFixed(1) + '%';
+      return h('div', { class: 'bar' }, h('div', { class: 'bt' }, h('span', { class: 'bn', text: p.name }), h('span', { class: 'ba', text: C.weight(p.kg) })), h('div', { class: 'track' }, fill));
+    })));
+    box.append(h('div', { class: 'how' }, h('b', { text: 'How it is worked out. ' }), C.METHOD));
   }
 
   /* ---------- the Leave tab ---------- */
@@ -487,7 +513,7 @@
           const rc = receiptsFor(l);
           return h('div', { class: 'ln' }, icon(kindOf(l.category)),
             h('div', { style: 'min-width:0' }, h('div', { class: 'nm', text: l.name || l.category }),
-              h('div', { class: 'dt', text: [l.category, niceDate(l.date), l.receiptNo ? 'No. ' + l.receiptNo : ''].filter(Boolean).join(' · ') })),
+              h('div', { class: 'dt', text: [l.category, niceDate(l.date), l.receiptNo ? 'No. ' + l.receiptNo : '', carbonText(l)].filter(Boolean).join(' · ') })),
             h('div', {}, h('div', { class: 'am', text: money(l.amount) }),
               rc.length ? h('div', { class: 'vw' }, rc.map((f, i) => h('button', { class: 'link', type: 'button', text: f.kind === 'tollcheck' ? 'Toll list' : rc.length > 1 ? `Receipt ${i + 1}` : 'Receipt', onclick: () => viewFile(c, f) }))) : null));
         }),
@@ -629,6 +655,11 @@
     const list = all().filter(inView).sort((a, b) => a.month.localeCompare(b.month) || a.claimant.localeCompare(b.claimant));
     if (!list.length) { toast('Nothing to export for this view.', true); return; }
     let rows;
+    if (kind === 'carbon') {
+      const d0 = new Date();
+      saveAs(new Blob([csv(window.Carbon.csvRows(list))], { type: 'text/csv;charset=utf-8' }), `WFC carbon from business travel - ${d0.getFullYear()}-${pad(d0.getMonth() + 1)}-${pad(d0.getDate())}.csv`);
+      return;
+    }
     if (kind === 'lines') {
       rows = [['Staff', 'Month', 'Line', 'Type', 'Date', 'Description', 'Receipt no.', 'Amount (RM)', 'Status']];
       list.forEach((c) => c.lines.forEach((l) => rows.push([c.claimant, c.monthLabel, l.no, l.category, l.date, l.name, l.receiptNo, Number(l.amount).toFixed(2), STATUS[c.status]])));
@@ -676,6 +707,7 @@
       S.lsort = S.lsort.key === k ? { key: k, dir: -S.lsort.dir } : { key: k, dir: ['claimant', 'type', 'status'].includes(k) ? 1 : -1 };
       render();
     }));
+    $('#btnAsk').addEventListener('click', () => { if (window.AskUI) window.AskUI.open(); });
     $('#tabClaims').addEventListener('click', () => setView('claims'));
     $('#tabLeave').addEventListener('click', () => setView('leave'));
     window.addEventListener('hashchange', () => setView(location.hash === '#leave' ? 'leave' : 'claims', true));
