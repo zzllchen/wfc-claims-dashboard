@@ -144,7 +144,8 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
     if (!plan || plan.table === 'none' || !t[plan.table]) return { empty: true, total: 0, count: 0, groups: [], rows: [] };
     const table = plan.table;
     const measure = table === 'leave' && !['count', 'days'].includes(plan.measure) ? 'days' : table !== 'lines' && ['kgCO2', 'litres'].includes(plan.measure) ? 'amount' : plan.measure || 'count';
-    const rows = pick(plan, t);
+    let rows = pick(plan, t);
+    if (measure === 'kgCO2' || measure === 'litres') rows = rows.filter((r) => r.kgCO2 || r.litres);   // carbon and litres come from fuel slips only
     const limit = Math.max(1, Math.min(50, parseInt(plan.limit, 10) || 10));
     const total = r2(rows.reduce((a, r) => a + valueOf(r, measure, table), 0));
     const out = { table, measure, unit: MEASURE_UNIT[measure], total, count: rows.length, groups: [], rows: [], columns: [], empty: !rows.length };
