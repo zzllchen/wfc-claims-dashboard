@@ -103,11 +103,8 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 textarea { resize: vertical; line-height: 1.5; }
 
 /* layout: the table, with the spend card beside it */
-.layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }      /* three columns, the same as the insights row under it, so the edges line up */
-.layout > .tablecard { grid-column: span 2; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; }
 @media (min-width: 641px) { #tbl .sort, #tbl tbody td { padding-left: 14px; padding-right: 14px; } #ltbl .sort, #ltbl tbody td { padding-left: 12px; padding-right: 12px; } }
-#viewLeave .layout { grid-template-columns: minmax(0, 1fr) 330px; }
-#viewLeave .layout > .tablecard { grid-column: auto; }
 .card { background: #fff; border: 1px solid #e3e9f4; border-radius: var(--r); box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 12px 32px -20px rgba(15, 23, 42, .14); }
 .tablecard { overflow: hidden; }
 .scroll { overflow-x: auto; }
@@ -158,7 +155,7 @@ tr.fresh td { animation: fresh 5s ease-out; }
 .spend .none { color: var(--muted); font-size: 13.5px; }
 .spend .stot { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
 .spend .stot b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
-.insights > .spend > .stot { margin-top: auto; }
+.spend .stot { margin-top: 2px; }
 
 /* carbon from business travel: one big number, who and when, how it is worked out */
 .carbon { padding: 24px 24px; display: grid; gap: 16px; }
@@ -261,8 +258,7 @@ dialog::backdrop { background: rgba(13, 27, 62, .5); }
 .toast.bad { background: var(--bad); }
 
 @media (max-width: 1180px) {          /* below this the lists need the full width: the auditor (or who is away) goes under it */
-  .layout, #viewLeave .layout { grid-template-columns: 1fr; }
-  .layout > .tablecard { grid-column: auto; }
+  .layout { grid-template-columns: 1fr; }
 }
 @media (max-width: 1100px) {
   .bars { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px 28px; }
@@ -595,18 +591,25 @@ dialog.rulesdlg[open] { display: block; }
   .rulesdlg textarea { min-height: 160px; }
 }
 
-/* ---------- the insights row under the claims: spend, software & AI tools, carbon (equal heights, footers lined up) ---------- */
-.insights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
-.insights > .card { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.insights > .card > .how { margin-top: auto; }
-.insights .bars { grid-template-columns: 1fr; gap: 14px; }
-@media (max-width: 1100px) {
-  .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-  .insights > .carbon { grid-column: 1 / -1; }
+/* ---------- the claims page: two columns, each keeping its own height (no stretched, half-empty cards)
+   left (two thirds): the claims, then spend and software & AI tools side by side; right (one third): the auditor, then carbon.
+   On tablets and phones the cards flow in one order: claims, auditor, spend, software, carbon. ---------- */
+.dash { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.mainc, .sidec { display: grid; gap: 20px; align-content: start; min-width: 0; }
+.duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.duo > .card, .sidec > .carbon { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dash .bars { grid-template-columns: 1fr; gap: 14px; }
+@media (max-width: 1180px) {
+  .dash { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mainc, .sidec, .duo { display: contents; }
+  .dash .tablecard { grid-column: 1 / -1; order: 1; }
+  .dash .audit { grid-column: 1 / -1; order: 2; }
+  .dash .spend { order: 3; }
+  .dash .subs { order: 4; }
+  .dash .carbon { grid-column: 1 / -1; order: 5; }
 }
 @media (max-width: 700px) {
-  .insights { grid-template-columns: 1fr; }
-  .insights > .carbon { grid-column: auto; }
+  .dash { grid-template-columns: 1fr; }
 }
 
 /* ---------- software & AI tools ---------- */

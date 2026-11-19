@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=16">
+<link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
 <header class="top">
@@ -57,7 +57,9 @@
       <label class="f grow"><span>Search</span><input type="search" id="fSearch" placeholder="Name, shop, receipt no. ..." autocomplete="off"></label>
     </div>
 
-    <div class="layout">
+    <!-- two columns: the claims with spend and software under them; the auditor with carbon under it. Each column keeps its own height. -->
+    <div class="layout dash">
+      <div class="mainc">
       <section class="card tablecard" aria-label="Claims">
         <div class="scroll">
           <table id="tbl">
@@ -75,14 +77,16 @@
         <div class="empty" id="empty" hidden></div>
         <div class="tfoot" id="tfoot"></div>
       </section>
-      <aside class="card audit" id="audit" aria-label="Flow auditor"></aside>
+      <div class="duo">
+        <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
+        <aside class="card subs" id="subs" aria-label="Software and AI tools"></aside>
+      </div>
+      </div>
+      <div class="sidec">
+        <aside class="card audit" id="audit" aria-label="Flow auditor"></aside>
+        <aside class="card carbon" id="carbon" aria-label="Carbon from business travel"></aside>
+      </div>
     </div>
-
-    <section class="insights" aria-label="Where the money goes">
-      <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
-      <aside class="card subs" id="subs" aria-label="Software and AI tools"></aside>
-      <aside class="card carbon" id="carbon" aria-label="Carbon from business travel"></aside>
-    </section>
   </div>
 
   <div class="view" id="viewLeave" hidden>
