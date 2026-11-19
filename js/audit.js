@@ -17,7 +17,7 @@
     'duplicate-lookalike': 'Looks like the same purchase twice',
     'on-leave': 'Claimed on a leave day',
     'fuel-math': "Fuel figures don't add up",
-    'date-window': 'Receipt date outside the claim month',
+    'date-window': 'Wrong month',
     'fuel-twice': 'Two fuel fills on one day',
     'big-amount': 'Much higher than usual',
     'no-receipt-no': 'No receipt number',
@@ -150,8 +150,7 @@
       const sent = String(x.c.updatedAt || x.c.submittedAt || '').slice(0, 10);       // the latest version: a re-sent claim may add later receipts
       const gap = monthIndex(x.c.month) - monthIndex(x.l.date.slice(0, 7));
       if (isIso(sent) && x.l.date > sent) add(x, 'date-window', 'medium', `Dated ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, after the claim was sent on ${niceDay(sent)}.`);
-      else if (gap !== 0) add(x, 'date-window', 'medium', `Paid ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, but put in the ${shortMonth(x.c.month)} claim. A receipt goes in the claim for the month it was paid`
-        + (gap < 0 ? ', so this one belongs in a later claim.' : gap >= 3 ? `, and this one is ${gap} months older.` : '.'));
+      else if (gap !== 0) add(x, 'date-window', 'low', `Paid ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, claimed in the ${shortMonth(x.c.month)} claim. A note only: receipts go in the month they were paid.`);   // a small note (WFC, 19 Nov)
     });
 
     // 7. two fuel fills by one person on one day (not already flagged as the same purchase)

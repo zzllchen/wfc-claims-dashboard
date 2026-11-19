@@ -64,13 +64,14 @@ ok('fuel at RM 1.14 a litre does not add up', () => {
   assert.strictEqual(f.check, 'fuel-math'); assert.ok(/RM 1\.14 a litre/.test(f.reason));
   assert.deepStrictEqual(checksOf('2026-10_alex', 1).includes('fuel-math'), false, 'RM 1.99 a litre is fine');
 });
-ok('dates: a receipt goes in the claim for the month it was paid; any other month is medium', () => {
-  assert.deepStrictEqual(flagsOf('2026-10_lim', 5).map((f) => [f.check, f.level]), [['date-window', 'medium']]);
-  assert.strictEqual(flagsOf('2026-10_lim', 5)[0].reason, 'Paid Mon 20 Jul 2026, but put in the Oct 2026 claim. A receipt goes in the claim for the month it was paid, and this one is 3 months older.');
+ok('dates: a receipt from another month is a small note; one dated after the claim was sent is medium', () => {
+  assert.deepStrictEqual(flagsOf('2026-10_lim', 5).map((f) => [f.check, f.level]), [['date-window', 'low']]);
+  assert.strictEqual(flagsOf('2026-10_lim', 5)[0].reason, 'Paid Mon 20 Jul 2026, claimed in the Oct 2026 claim. A note only: receipts go in the month they were paid.');
+  assert.strictEqual(flagsOf('2026-10_lim', 6)[0].level, 'medium', 'dated after the claim was sent stays medium');
   assert.ok(/after the claim was sent/.test(flagsOf('2026-10_lim', 6)[0].reason));
-  assert.deepStrictEqual(flagsOf('2026-09_raj', 3).map((f) => [f.check, f.level]), [['date-window', 'medium']]);
+  assert.deepStrictEqual(flagsOf('2026-09_raj', 3).map((f) => [f.check, f.level]), [['date-window', 'low']]);
   const later = A.run([claim('2026-10_n', 'N', '2026-10', [P('2026-11-02', 'Shop', 'n1', 9)], { updatedAt: '2026-11-05T02:00:00Z' })], []).flags[0];
-  assert.ok(/belongs in a later claim/.test(later.reason), later.reason);
+  assert.deepStrictEqual([later.level, /claimed in the Oct 2026 claim/.test(later.reason)], ['low', true], later.reason);
 });
 ok('two fuel fills in one day are low; parking on a weekend is not flagged (app payments can be any day)', () => {
   assert.deepStrictEqual(checksOf('2026-09_raj', 1), ['fuel-twice']);
@@ -88,9 +89,9 @@ ok('a line with no receipt number is low; parking without one is not flagged for
 });
 ok('high first; counts; money at risk counts each high or medium line once', () => {
   assert.strictEqual(res.flags[0].level, 'high');
-  assert.deepStrictEqual(res.counts, { high: 2, medium: 6, low: 3 });
-  // a41c9e 60 + Lim 60 + Alex 1.14/L 60 + Lim lookalike 45 + 45 + Lim Jul 40 + Lim Nov 40 + Raj Aug 60
-  assert.strictEqual(res.atRisk, 410);
+  assert.deepStrictEqual(res.counts, { high: 2, medium: 4, low: 5 });
+  // a41c9e 60 + Lim 60 + Alex 1.14/L 60 + Lim lookalike 45 + 45 + Lim Nov (after sending) 40
+  assert.strictEqual(res.atRisk, 310);
   assert.strictEqual(res.lines, 16); assert.strictEqual(res.claims, 3);   // Alex 7, Lim 6, Raj 3
 });
 ok('much higher than usual needs six lines of the kind', () => {
@@ -134,6 +135,6 @@ ok('the audit report has a row per flag and the totals', () => {
   const rows = A.csvRows(res);
   assert.strictEqual(rows.length, 1 + res.flags.length + 3);
   assert.deepStrictEqual(rows[0].slice(0, 4), ['Level', 'Check', 'Staff', 'Month']);
-  assert.deepStrictEqual(rows[rows.length - 1], ['On high and medium flags', '410.00']);
+  assert.deepStrictEqual(rows[rows.length - 1], ['On high and medium flags', '310.00']);
 });
 console.log('audit tests passed');
