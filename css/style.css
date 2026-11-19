@@ -762,3 +762,15 @@ dialog.rulesdlg[open] { display: block; }
 .fsheet-h b { font-size: 16px; font-weight: 700; justify-self: start; padding-left: 6px; }
 .fmenu.sheet .fopt { min-height: 50px; padding: 12px 14px; font-size: 16px; border-radius: 12px; }
 @media (max-width: 640px) { .fsel { min-width: 0; } }
+
+/* ---------- the spend card's bar and its colour key (the same parts, the same colours as the spend details) ---------- */
+.k-rest { --kb: #f1f4f9; --kc: #b8c2d6; }
+.icspend { display: grid; gap: 10px; margin-top: 4px; }
+.icspend .icbar { margin: 0; height: 8px; border-radius: 4px; }
+.iclg { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
+.iclg .lg { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.iclg .lg i { width: 9px; height: 9px; border-radius: 3px; background: var(--kc); flex: none; }
+.iclg .lg b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.spend .bar .fill { background: var(--kc, var(--blue)); }
+.spend .bar .track { background: var(--kb, var(--blue-50)); }
+@media (max-width: 640px) { .iclg { gap: 4px 10px; font-size: 12px; } }

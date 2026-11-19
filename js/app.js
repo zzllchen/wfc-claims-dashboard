@@ -442,7 +442,7 @@
         h('span', { class: 'ich' }, ic, h('span', { class: 'icl', text: label }), h('span', { class: 'icgo', 'aria-hidden': 'true', text: '›' })),
         h('span', { class: 'icv' }, h('b', { text: value }), unit ? h('small', { text: unit }) : null),
         extra || null,
-        h('span', { class: 'ics', text: sub }));
+        sub ? h('span', { class: 'ics', text: sub }) : null);
     };
     box.textContent = '';
     // the auditor
@@ -461,8 +461,14 @@
     const by = new Map();
     inv.forEach((c) => c.lines.forEach((l) => { const k = kindOf(l.category); by.set(k, (by.get(k) || 0) + (Number(l.amount) || 0)); }));
     const rows = Array.from(by).sort((x, y) => y[1] - x[1]), sum = rows.reduce((t, r) => t + r[1], 0);
-    const bar = h('span', { class: 'icbar' }, rows.map(([k, v]) => { const i = h('i', { class: `k-${k}`, title: `${KIND_LABEL[k]} ${money(v)}` }); i.style.width = (v / (sum || 1) * 100).toFixed(2) + '%'; return i; }));
-    box.append(card('spend', '', 'Spend', money(sum), '', rows.length ? rows.slice(0, 2).map(([k, v]) => `${KIND_LABEL[k]} ${Math.round(v / sum * 100)}%`).join(' · ') : 'Nothing claimed in this view', rows.length ? bar : null));
+    // the bar and its colour key show the same parts: the three biggest types in their own colours, the rest together in grey
+    const parts = (rows.length <= 4 ? rows : rows.slice(0, 3)).map(([k, v]) => ({ cls: `k-${k}`, name: KIND_LABEL[k], v }));
+    if (rows.length > 4) { const rest = rows.slice(3); parts.push({ cls: 'k-rest', name: `${rest.length} more`, v: rest.reduce((t, r) => t + r[1], 0), title: rest.map(([k, v]) => `${KIND_LABEL[k]} ${money(v)}`).join(', ') }); }
+    const pct = (v) => { const n = v / (sum || 1) * 100; return n > 0 && n < 1 ? '<1%' : `${Math.round(n)}%`; };
+    const spendKey = rows.length ? h('span', { class: 'icspend' },
+      h('span', { class: 'icbar' }, parts.map((p) => { const i = h('i', { class: p.cls, title: p.title || `${p.name} ${money(p.v)}` }); i.style.width = (p.v / (sum || 1) * 100).toFixed(2) + '%'; return i; })),
+      h('span', { class: 'iclg' }, parts.map((p) => h('span', { class: `lg ${p.cls}`, title: p.title || money(p.v) }, h('i'), p.name, h('b', { text: pct(p.v) }))))) : null;
+    box.append(card('spend', '', 'Spend', money(sum), '', rows.length ? '' : 'Nothing claimed in this view', spendKey));
     // software & AI tools
     const sr = window.Subs ? window.Subs.find(subsScope()) : null;
     if (sr && sr.tools.length) {
@@ -535,7 +541,7 @@
     if (!rows.length) { box.append(h('div', { class: 'none', text: 'Nothing to show yet.' })); return; }
     box.append(h('div', { class: 'bars' }, rows.map(([k, v]) => {
       const fill = h('div', { class: 'fill' }); fill.style.width = (v / rows[0][1] * 100).toFixed(1) + '%';
-      return h('div', { class: 'bar' },
+      return h('div', { class: `bar k-${k}` },
         h('div', { class: 'bt' }, icon(k), h('span', { class: 'bn', text: KIND_LABEL[k] }), h('span', { class: 'ba', text: money(v) }), h('span', { class: 'bp', text: Math.round(v / sum * 100) + '%' })),
         h('div', { class: 'track' }, fill));
     })));
