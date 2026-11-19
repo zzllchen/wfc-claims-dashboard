@@ -16,15 +16,16 @@
   // and Lim's meal on the 15th was on his MC day (see the leave below).
   const SPEC = [
     ['Alex Tan', 1, 'new', 3, [['Petrol', 3, 'Kejayaan Teguh Enterprise', 'a41c9e', 60], ['Petrol', 11, 'Kejayaan Teguh Enterprise', '5cc50b', 55.64], ['Petrol', 22, 'Petronas Seksyen 13', '7d02f1', 60, 52.5],
-      ['Toll', 28, "Touch 'n Go", '1130739887', 27.4], ['Parking', 28, 'MBSJ Flexi Parking', '', 84.8], ['AI tools', 14, 'Eleven Labs', 'INV4417', 46.7]]],
-    ['Siti Aminah', 1, 'checked', 27, [['Petrol', 6, 'Shell Subang Jaya', '88213', 60], ['Petrol', 19, 'Shell Subang Jaya', '88377', 58.2], ['Toll', 28, "Touch 'n Go", '1130739887', 41.2], ['Medical', 9, 'Klinik Putra Care', '5521', 75]]],
+      ['Toll', 28, "Touch 'n Go", '1130739887', 27.4], ['Parking', 28, 'MBSJ Flexi Parking', '', 84.8], ['AI tools', 14, 'Eleven Labs', 'INV4417', 46.7],
+      ['AI tools', 3, 'OpenAI ChatGPT Plus', 'CGP-1041', 94.5], ['AI tools', 12, 'Runway', 'INV2291', 99]]],
+    ['Siti Aminah', 1, 'checked', 27, [['Petrol', 6, 'Shell Subang Jaya', '88213', 60], ['Petrol', 19, 'Shell Subang Jaya', '88377', 58.2], ['Toll', 28, "Touch 'n Go", '1130739887', 41.2], ['Medical', 9, 'Klinik Putra Care', '5521', 75], ['AI tools', 2, 'Canva Pro', 'CNV-8812', 54.9]]],
     ['Raj Kumar', 1, 'question', 52, [['Petrol', 2, 'Petronas Bangi', 'e90b13', 60], ['Petrol', 9, 'Petronas Bangi', 'e91c77', 60], ['Petrol', 17, 'Petronas Kajang', 'f001ab', 60], ['Petrol', 25, 'Petronas Kajang', 'f0a2cd', 60],
       ['Toll', 28, "Touch 'n Go", '1130739887', 36.07], ['Accommodation', 21, 'Pekan Auto City Budget Hotel', '257947', 94.5]]],
-    ['Lim Wei Jie', 1, 'new', 5, [['Petrol', 8, 'Caltex Cheras', '30291', 60], ['Petrol', 11, 'Kejayaan Teguh Enterprise', '5cc50b', 55.64], ['Toll', 28, "Touch 'n Go", '1130739887', 22.65], ['Meals', 15, 'Restoran Sri Melaka', '1042', 38]]],
-    ['Nurul Huda', 2, 'paid', 24 * 20, [['Petrol', 4, 'Shell Putrajaya', '77120', 60], ['Petrol', 14, 'Shell Putrajaya', '77288', 60], ['Petrol', 24, 'Petronas Presint 9', 'bb7e02', 55.4], ['Toll', 30, "Touch 'n Go", '1130739887', 30.1]]],
-    ['Alex Tan', 2, 'paid', 24 * 21, [['Petrol', 5, 'Kejayaan Teguh Enterprise', '9ad3c0', 60], ['Petrol', 18, 'Kejayaan Teguh Enterprise', '9b01ee', 60], ['Toll', 30, "Touch 'n Go", '1130739887', 24.9], ['AI tools', 12, 'Runway', 'INV2208', 52.3]]],
+    ['Lim Wei Jie', 1, 'new', 5, [['Petrol', 8, 'Caltex Cheras', '30291', 60], ['Petrol', 11, 'Kejayaan Teguh Enterprise', '5cc50b', 55.64], ['Toll', 28, "Touch 'n Go", '1130739887', 22.65], ['Meals', 15, 'Restoran Sri Melaka', '1042', 38], ['AI tools', 6, 'OpenAI ChatGPT Plus', 'CGP-1063', 94.5]]],
+    ['Nurul Huda', 2, 'paid', 24 * 20, [['Petrol', 4, 'Shell Putrajaya', '77120', 60], ['Petrol', 14, 'Shell Putrajaya', '77288', 60], ['Petrol', 24, 'Petronas Presint 9', 'bb7e02', 55.4], ['Toll', 30, "Touch 'n Go", '1130739887', 30.1], ['Other', 9, 'Netflix', 'NFX-2209', 54.9]]],
+    ['Alex Tan', 2, 'paid', 24 * 21, [['Petrol', 5, 'Kejayaan Teguh Enterprise', '9ad3c0', 60], ['Petrol', 18, 'Kejayaan Teguh Enterprise', '9b01ee', 60], ['Toll', 30, "Touch 'n Go", '1130739887', 24.9], ['AI tools', 12, 'Runway', 'INV2208', 52.3], ['AI tools', 3, 'OpenAI ChatGPT Plus', 'CGP-0977', 94.5]]],
     ['Raj Kumar', 2, 'paid', 24 * 20 + 6, [['Petrol', 7, 'Petronas Bangi', 'd1190a', 60], ['Petrol', 16, 'Petronas Kajang', 'd2203f', 60], ['Toll', 30, "Touch 'n Go", '1130739887', 18.5]]],
-    ['Siti Aminah', 2, 'paid', 24 * 22, [['Petrol', 10, 'Shell Subang Jaya', '87001', 60], ['Toll', 30, "Touch 'n Go", '1130739887', 33.8], ['Medical', 13, 'Klinik Dr Lee', '3319', 45]]],
+    ['Siti Aminah', 2, 'paid', 24 * 22, [['Petrol', 10, 'Shell Subang Jaya', '87001', 60], ['Toll', 30, "Touch 'n Go", '1130739887', 33.8], ['Medical', 13, 'Klinik Dr Lee', '3319', 45], ['AI tools', 2, 'Canva Pro', 'CNV-8650', 54.9]]],
   ];
 
   function build() {

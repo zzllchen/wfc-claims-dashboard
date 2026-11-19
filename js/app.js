@@ -247,7 +247,7 @@
   /* ---------- drawing the page ---------- */
   function render() {
     paintTop(); paintTabs(); paintBanner();
-    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintAudit(); paintSpend(); paintCarbon(); }
+    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintAudit(); paintSpend(); paintSubs(); paintCarbon(); }
     if (S.open) {                  // the panel is only redrawn when its claim changed, so a note being typed is not wiped by the 20-second refresh
       const c = find(S.open);
       if (!c) closeDrawer(); else if (S.drawerSig !== drawerSigOf(c)) paintDrawer(true);
@@ -338,7 +338,7 @@
       const open = () => openDrawer(c.id);
       rows.append(h('tr', { tabindex: '0', 'data-id': c.id, class: S.fresh.has(c.id) ? 'fresh' : '', onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
         h('td', {}, h('div', { class: 'who' }, c.claimant, c.sample ? h('span', { class: 'tag', text: 'Sample' }) : null, flagChip(c)), h('div', { class: 'sub show-sm', text: `${c.monthLabel} · ${c.lines.length} lines · ${ago(c.updatedAt)}` })),
-        h('td', { class: 'hide-sm', text: c.monthLabel }),
+        h('td', { class: 'hide-sm', title: c.monthLabel, text: /^\d{4}-\d{2}$/.test(c.month) ? `${SHORT[+c.month.slice(5, 7) - 1]} ${c.month.slice(0, 4)}` : c.monthLabel }),
         h('td', { class: 'num hide-sm', text: String(c.lines.length) }),
         h('td', { class: 'num total', text: money(c.total) }),
         h('td', { class: 'hide-sm muted', title: fullWhen(c.updatedAt), text: ago(c.updatedAt) }),
@@ -422,7 +422,7 @@
         h('span', { class: 'aud-body' }, h('b', { text: f.title }), h('span', { class: 'aud-why', text: f.reason }), h('span', { class: 'aud-meta', text: flagMeta(f) }))))));
       if (flags.length > shown.length || S.auditAll) box.append(h('button', { class: 'link aud-more', type: 'button', text: S.auditAll ? 'Show fewer' : `Show all ${flags.length}`, onclick: () => { S.auditAll = !S.auditAll; paintAudit(); } }));
     }
-    box.append(h('div', { class: 'how' }, h('b', { text: 'How it works. ' }), 'Every line is checked against every claim from everyone, in every month: the same receipt twice, the same purchase twice, claims on leave days, fuel figures, dates. Your company rules are read by Claude. Flags are for you to look at; nothing is refused on its own.'));
+    box.append(h('div', { class: 'how' }, h('b', { text: 'How it works. ' }), 'Each line is checked against every claim, from everyone, in every month, and against your company rules (read by Claude). Flags are for you to look at; nothing is refused on its own.'));
   }
 
   /* ---------- the company's claim rules ---------- */
@@ -461,7 +461,8 @@
     const sum = rows.reduce((a, r) => a + r[1], 0);
     const scope = scopeText();
     box.textContent = '';
-    box.append(h('div', {}, h('h2', { text: 'Spend by type' }), h('div', { class: 'sub', text: scope })));
+    const st = h('h2', {}); st.innerHTML = svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'); st.append('Spend by type');
+    box.append(h('div', {}, st, h('div', { class: 'sub', text: scope })));
     if (!rows.length) { box.append(h('div', { class: 'none', text: 'Nothing to show yet.' })); return; }
     box.append(h('div', { class: 'bars' }, rows.map(([k, v]) => {
       const fill = h('div', { class: 'fill' }); fill.style.width = (v / rows[0][1] * 100).toFixed(1) + '%';
@@ -469,6 +470,47 @@
         h('div', { class: 'bt' }, icon(k), h('span', { class: 'bn', text: KIND_LABEL[k] }), h('span', { class: 'ba', text: money(v) }), h('span', { class: 'bp', text: Math.round(v / sum * 100) + '%' })),
         h('div', { class: 'track' }, fill));
     })));
+    const nl = list.reduce((n, c) => n + c.lines.length, 0);
+    box.append(h('div', { class: 'stot' }, h('span', { text: `${nl} line${nl === 1 ? '' : 's'} on ${list.length} claim${list.length === 1 ? '' : 's'}` }), h('span', {}, 'Total ', h('b', { text: money(sum) }))));
+  }
+
+  /* ---------- software and AI tools paid through claims (js/subs.js): every month of history, for the person picked (if any) ---------- */
+  const LAYERS = svg('<path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/>');
+  const SUB_ICON = { bad: svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>'), save: svg('<path d="M12 3v18M17 7.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 2.6 5 3.3 5 1.4 5 3.4-2.2 3.3-5 3.3-5-1.2-5-3.1"/>'),
+    warn: svg('<path d="m4 16 6-6 4 4 6-6"/><path d="M15 8h5v5"/>'), info: svg('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>') };
+  const subsScope = () => all().filter((c) => S.f.staff === 'all' || c.claimant === S.f.staff);
+  // "Oct 2026", "Sep – Oct 2026", "Dec 2025 – Jan 2026"
+  const monthSpan = (ms) => { const a = ms[0], b = ms[ms.length - 1], f = (m) => SHORT[+m.slice(5, 7) - 1];
+    return a === b ? `${f(a)} ${a.slice(0, 4)}` : a.slice(0, 4) === b.slice(0, 4) ? `${f(a)} – ${f(b)} ${b.slice(0, 4)}` : `${f(a)} ${a.slice(0, 4)} – ${f(b)} ${b.slice(0, 4)}`; };
+  function paintSubs() {
+    const box = $('#subs'); if (!box) return;
+    box.textContent = '';
+    if (!window.Subs) { box.hidden = true; return; }
+    box.hidden = false;
+    const r = window.Subs.find(subsScope());
+    const title = h('h2', {}); title.innerHTML = LAYERS; title.append('Software & AI tools');
+    box.append(h('div', { class: 'chead' }, title, h('div', { class: 'sub', text: `${S.f.staff === 'all' ? 'Everyone' : S.f.staff} · every month on record` })));
+    if (!r.tools.length) { box.append(h('div', { class: 'none', text: 'No AI tools or software in these claims yet. They show up here when a claim line is typed as AI tools or software, or names a known tool.' })); return; }
+    const t = r.totals;
+    box.append(t.monthly
+      ? h('div', { class: 'sbig' }, h('b', { text: money(t.monthly) }), h('span', { text: 'a month' }))
+      : h('div', { class: 'sbig' }, h('b', { text: money(t.claimed) }), h('span', { text: 'claimed' })));
+    box.append(h('div', { class: 'from', text: [t.monthly ? `About ${money(t.yearly)} a year` : 'No repeat payments yet', `${t.tools} tool${t.tools === 1 ? '' : 's'}`, `${t.people} ${t.people === 1 ? 'person' : 'people'}`].join(' · ') }));
+    if (r.insights.length) {
+      box.append(h('div', { class: 'sub-ins' }, r.insights.slice(0, 3).map((i) => {
+        const ic = h('span', { class: `sic s-${i.level}` }); ic.innerHTML = SUB_ICON[i.level];
+        return h('button', { class: 'sub-in', type: 'button', title: 'Open the claim', onclick: () => openDrawer(i.open.claimId, i.open.line) }, ic,
+          h('span', { class: 'sub-tx' }, h('b', { text: i.title }), h('span', { text: i.text })));
+      })));
+    }
+    const shown = S.subsAll ? r.tools : r.tools.slice(0, 4);
+    box.append(h('ul', { class: 'tools' }, shown.map((x) => h('li', {},
+      h('button', { type: 'button', class: 'tool' + (x.personal ? ' personal' : ''), title: 'Open the latest claim with it', onclick: () => openDrawer(x.open.claimId, x.open.line) },
+        h('span', { class: 'tini', text: x.name.slice(0, 1).toUpperCase() }),
+        h('span', { class: 'tnm' }, h('b', { text: x.name }), h('small', { text: `${x.payers.map((p) => p.staff).join(', ')} · ${monthSpan(x.months)}` })),
+        h('span', { class: 'tam' }, h('b', { text: x.recurring ? money(x.monthly) : money(x.last) }), h('small', { text: x.personal ? 'personal' : x.recurring ? 'a month' : 'once' })))))));
+    if (r.tools.length > 4) box.append(h('button', { class: 'link more', type: 'button', text: S.subsAll ? 'Show fewer' : `Show all ${r.tools.length} tools`, onclick: () => { S.subsAll = !S.subsAll; paintSubs(); } }));
+    box.append(h('div', { class: 'how' }, h('b', { text: 'How it is found. ' }), 'Lines typed as AI tools or software, and known tool names. Paid in two or more months counts as monthly, at the latest price.'));
   }
 
   /* the carbon of business travel, from the litres on the fuel slips of the claims in view (js/carbon.js) */
@@ -840,6 +882,11 @@
       const d1 = new Date();
       saveAs(new Blob([csv(AUD.csvRows({ flags, lines: list.reduce((n, c) => n + c.lines.length, 0), claims: list.length, atRisk: atRiskOf(flags) }))], { type: 'text/csv;charset=utf-8' }),
         `WFC audit report - ${d1.getFullYear()}-${pad(d1.getMonth() + 1)}-${pad(d1.getDate())}.csv`);
+      return;
+    }
+    if (kind === 'subs') {
+      const d2 = new Date();
+      saveAs(new Blob([csv(window.Subs.csvRows(window.Subs.find(subsScope())))], { type: 'text/csv;charset=utf-8' }), `WFC software and AI tools - ${d2.getFullYear()}-${pad(d2.getMonth() + 1)}-${pad(d2.getDate())}.csv`);
       return;
     }
     if (kind === 'carbon') {

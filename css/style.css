@@ -103,7 +103,11 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 textarea { resize: vertical; line-height: 1.5; }
 
 /* layout: the table, with the spend card beside it */
-.layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; }
+.layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }      /* three columns, the same as the insights row under it, so the edges line up */
+.layout > .tablecard { grid-column: span 2; }
+@media (min-width: 641px) { #tbl .sort, #tbl tbody td { padding-left: 14px; padding-right: 14px; } #ltbl .sort, #ltbl tbody td { padding-left: 12px; padding-right: 12px; } }
+#viewLeave .layout { grid-template-columns: minmax(0, 1fr) 330px; }
+#viewLeave .layout > .tablecard { grid-column: auto; }
 .card { background: #fff; border: 1px solid #e3e9f4; border-radius: var(--r); box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 12px 32px -20px rgba(15, 23, 42, .14); }
 .tablecard { overflow: hidden; }
 .scroll { overflow-x: auto; }
@@ -139,9 +143,10 @@ tr.fresh td { animation: fresh 5s ease-out; }
 .empty p { margin: 0; max-width: 420px; }
 
 /* spend by type: ranked bars, one colour */
-.side { display: grid; gap: 20px; align-self: start; }      /* the auditor, spend and carbon, beside the table (not sticky: together they can be taller than the screen) */
 .spend { padding: 24px 24px; display: grid; gap: 16px; }
-.spend h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+/* every insight card's title: an icon, the name, and what it covers underneath */
+.spend h2, .subs h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+.spend h2 svg { width: 18px; height: 18px; color: var(--blue); flex: none; }
 .spend .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .bars { display: grid; gap: 14px; }
 .bar .bt { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -151,6 +156,9 @@ tr.fresh td { animation: fresh 5s ease-out; }
 .bar .track { height: 8px; border-radius: 4px; background: var(--blue-50); margin-top: 6px; overflow: hidden; }
 .bar .fill { height: 100%; border-radius: 4px; background: var(--blue); min-width: 3px; }
 .spend .none { color: var(--muted); font-size: 13.5px; }
+.spend .stot { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+.spend .stot b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.insights > .spend > .stot { margin-top: auto; }
 
 /* carbon from business travel: one big number, who and when, how it is worked out */
 .carbon { padding: 24px 24px; display: grid; gap: 16px; }
@@ -161,7 +169,7 @@ tr.fresh td { animation: fresh 5s ease-out; }
 .carbon .co2 b { font-size: 32px; font-weight: 750; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1.1; }
 .carbon .co2 span { color: var(--muted); font-size: 14px; font-weight: 600; }
 .carbon .from { color: var(--muted); font-size: 13.5px; margin-top: -8px; }
-.carbon .scope { display: inline-flex; align-items: center; gap: 6px; justify-self: start; font-size: 12px; font-weight: 650; color: #15803d; background: #ecfdf3; border-radius: 99px; padding: 3px 10px; }
+.carbon .scope { display: inline-flex; align-items: center; gap: 6px; justify-self: start; align-self: flex-start; font-size: 12px; font-weight: 650; color: #15803d; background: #ecfdf3; border-radius: 99px; padding: 3px 10px; }
 .carbon .bar .fill { background: #16a34a; }
 .carbon .bar .track { background: #ecfdf3; }
 .carbon .how { font-size: 12.5px; color: var(--faint); line-height: 1.45; border-top: 1px solid var(--line); padding-top: 12px; }
@@ -251,9 +259,11 @@ dialog::backdrop { background: rgba(13, 27, 62, .5); }
 .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 60; background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 12px; font-size: 14px; font-weight: 600; box-shadow: 0 10px 30px rgba(13, 27, 62, .3); max-width: 92vw; }
 .toast.bad { background: var(--bad); }
 
+@media (max-width: 1180px) {          /* below this the lists need the full width: the auditor (or who is away) goes under it */
+  .layout, #viewLeave .layout { grid-template-columns: 1fr; }
+  .layout > .tablecard { grid-column: auto; }
+}
 @media (max-width: 1100px) {
-  .layout { grid-template-columns: 1fr; }
-  .side { position: static; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
   .bars { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px 28px; }
 }
 @media (max-width: 760px) {
@@ -371,10 +381,11 @@ td .sub.soon { color: var(--blue); }
 .awrow .dd { color: var(--muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .away .more { color: var(--muted); font-size: 13px; padding-top: 8px; border-top: 1px solid var(--line); }
 .bar .bsub { color: var(--faint); font-size: 12.5px; margin-top: 5px; }
-@media (max-width: 1100px) { .away { position: static; } }
+@media (max-width: 1180px) { .away { position: static; } }
 
 /* a phone or small tablet: the name and the buttons on the first line, the Claims / Leave switch full width under them */
-@media (max-width: 800px) {
+@media (max-width: 1080px) { .upd { display: none; } }
+@media (max-width: 900px) {          /* the header goes on two rows: the brand and buttons, then the Claims | Leave switch */
   .top { position: static; }
   .headbar { flex-wrap: wrap; gap: 12px; min-height: 0; padding-top: 12px; padding-bottom: 14px; }
   .brand { order: 1; gap: 12px; }
@@ -384,7 +395,7 @@ td .sub.soon { color: var(--blue); }
   .topbtns { order: 2; gap: 8px; }
   .mainnav { order: 3; width: 100%; }
   .mainnav .tab { flex: 1; justify-content: center; padding: 10px 8px; font-size: 14px; }
-  .side, .away { top: 12px; }
+  .away { top: 12px; }
 }
 @media (max-width: 520px) {
   .bname { display: none; }
@@ -582,3 +593,55 @@ dialog.rulesdlg[open] { display: block; }
   .rulesdlg form { padding: 22px 18px calc(18px + env(safe-area-inset-bottom)); }
   .rulesdlg textarea { min-height: 160px; }
 }
+
+/* ---------- the insights row under the claims: spend, software & AI tools, carbon (equal heights, footers lined up) ---------- */
+.insights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
+.insights > .card { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.insights > .card > .how { margin-top: auto; }
+.insights .bars { grid-template-columns: 1fr; gap: 14px; }
+@media (max-width: 1100px) {
+  .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .insights > .carbon { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .insights { grid-template-columns: 1fr; }
+  .insights > .carbon { grid-column: auto; }
+}
+
+/* ---------- software & AI tools ---------- */
+.subs { padding: 24px; }
+.subs h2 svg { width: 18px; height: 18px; color: #7c3aed; flex: none; }
+.subs .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.subs .sbig { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.subs .sbig b { font-size: 32px; font-weight: 750; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.subs .sbig span { color: var(--muted); font-size: 14px; font-weight: 600; }
+.subs .from { color: var(--muted); font-size: 13.5px; margin-top: -8px; }
+.subs .none { color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.sub-ins { display: grid; gap: 14px; padding: 14px; border-radius: 12px; background: #f8f9fd; border: 1px solid var(--line); }
+.sub-in { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; align-items: start; width: 100%; text-align: left; padding: 0; border: 0; border-radius: 0; background: none; color: var(--ink); font-weight: 400; box-shadow: none; }
+.sub-in:hover b { color: var(--blue); }
+.sic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; }
+.sic svg { width: 16px; height: 16px; }
+.sic.s-bad { background: var(--bad-bg); color: var(--bad); }
+.sic.s-save { background: var(--ok-bg); color: var(--ok); }
+.sic.s-warn { background: var(--warn-bg); color: var(--warn); }
+.sic.s-info { background: var(--blue-50); color: var(--blue); }
+.sub-tx { display: grid; gap: 2px; min-width: 0; }
+.sub-tx b { font-size: 14px; font-weight: 650; }
+.sub-tx span { color: var(--muted); font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tools { list-style: none; margin: 0; padding: 0; display: grid; }
+.tools li + li { border-top: 1px solid var(--line); }
+.tool { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; padding: 10px 0; background: none; border: 0; border-radius: 0; box-shadow: none; text-align: left; color: var(--ink); font-weight: 400; }
+.tool:hover .tnm b { color: var(--blue); }
+.tini { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-weight: 750; font-size: 14px; color: #5b21b6; background: #f3effe; }
+.tool.personal .tini { color: var(--bad); background: var(--bad-bg); }
+.tnm { display: grid; gap: 1px; min-width: 0; }
+.tnm b { font-size: 14px; font-weight: 650; }
+.tnm small { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tam { display: grid; justify-items: end; gap: 1px; }
+.tam b { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tam small { color: var(--faint); font-size: 12px; }
+.subs .more { align-self: flex-start; font-size: 13.5px; padding: 0; }
+.subs .how { font-size: 12.5px; color: var(--faint); line-height: 1.45; border-top: 1px solid var(--line); padding-top: 12px; }
+.subs .how b { color: var(--muted); font-weight: 650; }
+@media (max-width: 640px) { .subs { padding: 20px 18px; } .spend, .carbon { padding: 20px 18px; } }

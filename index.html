@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=14">
+<link rel="stylesheet" href="css/style.css?v=15">
 </head>
 <body>
 <header class="top">
@@ -36,6 +36,7 @@
           <button type="button" data-export="claims" data-view="claims">Claims list <small>one row per claim</small></button>
           <button type="button" data-export="lines" data-view="claims">Every line <small>one row per receipt line</small></button>
           <button type="button" data-export="audit" data-view="claims">Audit report <small>one row per flag, with the reason</small></button>
+          <button type="button" data-export="subs" data-view="claims">Software &amp; AI tools <small>one row per tool and person, a year at the latest price</small></button>
           <button type="button" data-export="carbon" data-view="claims">Carbon (business travel) <small>one row per fuel slip, kg CO₂e</small></button>
           <button type="button" data-export="leave" data-view="leave" hidden>Leave list <small>one row per application</small></button>
         </div>
@@ -74,12 +75,14 @@
         <div class="empty" id="empty" hidden></div>
         <div class="tfoot" id="tfoot"></div>
       </section>
-      <div class="side">
-        <aside class="card audit" id="audit" aria-label="Flow auditor"></aside>
-        <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
-        <aside class="card carbon" id="carbon" aria-label="Carbon from business travel"></aside>
-      </div>
+      <aside class="card audit" id="audit" aria-label="Flow auditor"></aside>
     </div>
+
+    <section class="insights" aria-label="Where the money goes">
+      <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
+      <aside class="card subs" id="subs" aria-label="Software and AI tools"></aside>
+      <aside class="card carbon" id="carbon" aria-label="Carbon from business travel"></aside>
+    </section>
   </div>
 
   <div class="view" id="viewLeave" hidden>
@@ -168,9 +171,10 @@
 <script defer src="js/leave.js?v=1"></script>
 <script defer src="js/carbon.js?v=1"></script>
 <script defer src="js/audit.js?v=5"></script>
+<script defer src="js/subs.js?v=1"></script>
 <script defer src="js/askflow.js?v=5"></script>
 <script defer src="js/askui.js?v=4"></script>
-<script defer src="js/sample.js?v=4"></script>
-<script defer src="js/app.js?v=8"></script>
+<script defer src="js/sample.js?v=5"></script>
+<script defer src="js/app.js?v=9"></script>
 </body>
 </html>
