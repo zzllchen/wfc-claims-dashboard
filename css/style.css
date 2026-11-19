@@ -825,3 +825,10 @@ dialog.rulesdlg[open] { display: block; }
 }
 .icl .ls { display: none; }
 @media (max-width: 560px) { .icl .lf:not(:only-child) { display: none; } .icl .ls { display: inline; } }
+/* the number row is the same height in every card, so the bars line up exactly */
+@media (min-width: 561px) {
+  .icard .icv { height: 34px; align-items: baseline; }
+  .icard .icv b { line-height: 34px; }
+  .icard .icv small { line-height: 1; }
+  .icard.empty .icv b { font-size: 26px; }
+}

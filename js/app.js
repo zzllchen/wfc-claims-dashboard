@@ -462,7 +462,7 @@
     const lv = { high: 0, medium: 0, low: 0 };
     flags.forEach((f) => { lv[f.level]++; });
     const serious = lv.high + lv.medium, rules = rulesText();
-    const ruleLine = S.pol.busy ? `Checking against your rules (${S.pol.done} of ${S.pol.total})` : rules ? 'Also checked against your company rules' : 'Every line checked';
+    const ruleLine = S.pol.busy ? `Checking against your rules (${S.pol.done} of ${S.pol.total})` : rules ? 'Company rules checked too' : 'Every line checked';
     if (!nLines) box.append(card('audit', 'empty', 'Flow auditor', '–', '', null, 'No claims in this view'));
     else if (serious) {
       const parts = ['high', 'medium', 'low'].filter((l) => lv[l]).map((l) => ({ name: LEVEL_WORD[l], v: lv[l], val: String(lv[l]), cls: `lvl-${l}` }));
