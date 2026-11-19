@@ -9,10 +9,6 @@
   'use strict';
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  // Malaysian public holidays (federal + Selangor), the same list the Claim Builder uses for tolls
-  const HOLIDAYS = new Set(['2026-01-01', '2026-02-01', '2026-02-02', '2026-02-17', '2026-02-18', '2026-03-07', '2026-03-21', '2026-03-22', '2026-03-23',
-    '2026-05-01', '2026-05-27', '2026-05-31', '2026-06-01', '2026-06-02', '2026-06-17', '2026-08-25', '2026-08-31', '2026-09-16', '2026-11-08', '2026-11-09',
-    '2026-12-11', '2026-12-25']);
   const LEVELS = ['high', 'medium', 'low'];
   const LEVEL_WORD = { high: 'High', medium: 'Medium', low: 'Low' };
   const CHECK = {
@@ -23,7 +19,6 @@
     'fuel-math': "Fuel figures don't add up",
     'date-window': 'Receipt date outside the claim month',
     'fuel-twice': 'Two fuel fills on one day',
-    'off-day': 'Parking on a day off',
     'big-amount': 'Much higher than usual',
     'no-receipt-no': 'No receipt number',
     policy: 'Breaks a company rule',
@@ -50,6 +45,9 @@
   const shopKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const sameName = (a, b) => { const x = String(a || '').toLowerCase().trim(), y = String(b || '').toLowerCase().trim(); return !!x && !!y && (x === y || (x.length >= 4 && y.length >= 4 && (x.includes(y) || y.includes(x)))); };
   const lineId = (claimId, no) => `${claimId}#${no}`;
+  /* a monthly total from the Touch 'n Go statement (the toll line, and parking summed from it): dated at the month's end, so its date says nothing.
+     Known by its kind, by the name Touch 'n Go, or by carrying a toll line's card number. */
+  const summaryLine = (x, cards) => x.k === 'toll' || (x.k === 'parking' && (/touch\s*.?n\s*.?go|\btng\b/i.test(x.l.name || '') || cards.has(x.rn)));
   // a short, plain pointer to another line: "Alex Tan's Oct 2026 claim, line 3 (RM 60.00)" or "line 3 of this claim"
   const where = (x, from) => (x.c.id === from.c.id ? `line ${x.l.no} of this claim (${money(x.l.amount)})` : `${x.c.claimant}'s ${shortMonth(x.c.month)} claim, line ${x.l.no} (${money(x.l.amount)})`);
 
@@ -85,6 +83,7 @@
     const o = opts || {};
     const all = linesOf(claims);
     const byLine = new Map(all.map((x) => [lineId(x.c.id, x.l.no), x]));
+    const cards = new Set(all.filter((x) => x.k === 'toll' && x.rn).map((x) => x.rn));
     const flags = [];
     const seen = new Set();
     const add = (x, check, level, reason, related) => {
@@ -125,10 +124,10 @@
       });
     });
 
-    // 4. fuel, parking, meals or a hotel on a day the person was on leave (toll lines are one monthly sum, so they have no real date; medical on sick leave is normal)
+    // 4. fuel, parking, meals or a hotel on a day the person was on leave (statement totals have no real date; medical on sick leave is normal)
     const away = (leave || []).filter((v) => isIso(v.start));
     all.forEach((x) => {
-      if (!['fuel', 'parking', 'meals', 'stay'].includes(x.k) || !isIso(x.l.date)) return;
+      if (!['fuel', 'parking', 'meals', 'stay'].includes(x.k) || !isIso(x.l.date) || summaryLine(x, cards)) return;
       const v = away.find((a) => sameName(a.claimant, x.c.claimant) && x.l.date >= a.start && x.l.date <= (a.end || a.start));
       if (!v) return;
       const span = v.start === (v.end || v.start) ? 'that day' : `from ${niceDay(v.start)} to ${niceDay(v.end)}`;
@@ -146,7 +145,7 @@
 
     // 6. a receipt dated outside the claim month: after the claim was sent, after the month, or long before it
     all.forEach((x) => {
-      if (!isIso(x.l.date) || !/^\d{4}-\d{2}$/.test(x.c.month || '') || x.k === 'toll') return;
+      if (!isIso(x.l.date) || !/^\d{4}-\d{2}$/.test(x.c.month || '') || summaryLine(x, cards)) return;
       const sent = String(x.c.updatedAt || x.c.submittedAt || '').slice(0, 10);       // the latest version: a re-sent claim may add later receipts
       const gap = monthIndex(x.c.month) - monthIndex(x.l.date.slice(0, 7));
       if (isIso(sent) && x.l.date > sent) add(x, 'date-window', 'medium', `Dated ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, after the claim was sent on ${niceDay(sent)}.`);
@@ -164,15 +163,7 @@
       });
     });
 
-    // 8. parking on a weekend or public holiday (parking is claimed for work only)
-    all.forEach((x) => {
-      if (x.k !== 'parking' || !isIso(x.l.date)) return;
-      const d = dayOf(x.l.date);
-      if (HOLIDAYS.has(x.l.date)) add(x, 'off-day', 'low', `Parking on ${niceDay(x.l.date)}, a public holiday. Parking is claimed for work only.`);
-      else if (d === 0 || d === 6) add(x, 'off-day', 'low', `Parking on ${niceDay(x.l.date)}, a weekend. Parking is claimed for work only.`);
-    });
-
-    // 9. far above the usual line of its kind (needs enough lines to know what usual is)
+    // 8. far above the usual line of its kind (needs enough lines to know what usual is)
     groupBy(all.filter((x) => x.amount > 0), (x) => x.k).forEach((g) => {
       if (g.length < 6) return;
       const sorted = g.map((x) => x.amount).sort((a, b) => a - b);
@@ -180,7 +171,7 @@
       g.forEach((x) => { if (x.amount >= 50 && x.amount > 3 * median) add(x, 'big-amount', 'low', `${money(x.amount)} is about ${Math.round(x.amount / median)} times a usual ${KIND_WORD[x.k]} line (${money(median)}).`); });
     });
 
-    // 10. no receipt number (toll and parking carry the statement number instead)
+    // 9. no receipt number (toll and parking carry the statement number instead)
     all.forEach((x) => { if (!statementLine(x.k) && !x.rn && x.amount > 0) add(x, 'no-receipt-no', 'low', 'No receipt number, so it cannot be matched against other claims.'); });
 
     // the company's own rules, as Claude read them (line 0 = the claim as a whole, shown on its first line)
@@ -283,7 +274,7 @@ Work out any sums yourself carefully from the lines given. Return {"findings": [
     return out;
   }
 
-  const api = { run, photoCandidates, policyRequest, policyFindings, policyKey, csvRows, CHECK, LEVELS, LEVEL_WORD, EXAMPLE_RULES, POLICY_SCHEMA, kindOf, HOLIDAYS };
+  const api = { run, photoCandidates, policyRequest, policyFindings, policyKey, csvRows, CHECK, LEVELS, LEVEL_WORD, EXAMPLE_RULES, POLICY_SCHEMA, kindOf };
   root.Audit = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

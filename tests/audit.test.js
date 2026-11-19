@@ -16,6 +16,7 @@ const claims = [
     { category: 'Parking', date: '2026-10-04', name: 'MBSJ Parking', receiptNo: '', amount: 4 },     // a Sunday
     P('2026-10-22', 'Petronas Seksyen 13', '7d02f1', 60, { litres: 52.5 }),             // RM 1.14 a litre
     { category: 'Meals', date: '2026-10-15', name: 'Restoran Sri Melaka', receiptNo: '', amount: 38 },   // no receipt number
+    { category: 'Parking', date: '2026-10-20', name: "Touch 'n Go", receiptNo: '1130739887', amount: 15 },   // parking summed from the statement: its date is not a day
   ]),
   claim('2026-10_lim', 'Lim Wei Jie', '2026-10', [
     P('2026-10-03', 'Kejayaan Teguh', 'A41C-9E', 60),                                  // Alex's receipt number again
@@ -29,7 +30,6 @@ const claims = [
     P('2026-09-02', 'Petronas Bangi', 'e90b13', 60, { litres: 30.151 }),
     P('2026-09-02', 'Petronas Kajang', 'e91c77', 35),                                   // second fill that day
     P('2026-08-28', 'Petronas Bangi', 'd1190a', 60),                                    // last month's receipt: low
-    { category: 'Parking', date: '2026-09-16', name: 'KLCC Parking', receiptNo: '', amount: 12 },    // Malaysia Day
   ]),
 ];
 const leave = [{ claimant: 'alex tan', type: 'sick', start: '2026-10-19', end: '2026-10-20', days: 2 }];
@@ -69,11 +69,15 @@ ok('dates: long before the month and after sending are medium, last month is low
   assert.ok(/after the claim was sent/.test(flagsOf('2026-10_lim', 6)[0].reason));
   assert.deepStrictEqual(flagsOf('2026-09_raj', 3).map((f) => [f.check, f.level]), [['date-window', 'low']]);
 });
-ok('two fuel fills in one day are low; parking on a Sunday or Malaysia Day is low', () => {
+ok('two fuel fills in one day are low; parking on a weekend is not flagged (app payments can be any day)', () => {
   assert.deepStrictEqual(checksOf('2026-09_raj', 1), ['fuel-twice']);
   assert.deepStrictEqual(checksOf('2026-09_raj', 2), ['fuel-twice']);
-  assert.ok(/a weekend/.test(flagsOf('2026-10_alex', 4)[0].reason));
-  assert.ok(/a public holiday/.test(flagsOf('2026-09_raj', 4)[0].reason));
+  assert.deepStrictEqual(checksOf('2026-10_alex', 4), []);
+});
+ok('a statement total (parking summed from Touch \'n Go) is not checked for leave days or dates', () => {
+  assert.deepStrictEqual(checksOf('2026-10_alex', 7), [], 'dated in Alex\'s MC, but it is a monthly total');
+  const stray = [claim('2026-10_z', 'Z', '2026-10', [{ category: 'Toll', date: '2026-10-31', name: 'TNG', receiptNo: '99887766', amount: 9 }, { category: 'Parking', date: '2026-07-31', name: 'Parking (statement)', receiptNo: '99887766', amount: 5 }])];
+  assert.deepStrictEqual(A.run(stray, []).flags, [], 'carrying the toll card number makes it a statement total');
 });
 ok('a line with no receipt number is low; parking without one is not flagged for that', () => {
   assert.deepStrictEqual(checksOf('2026-10_alex', 6), ['no-receipt-no']);
@@ -81,10 +85,10 @@ ok('a line with no receipt number is low; parking without one is not flagged for
 });
 ok('high first; counts; money at risk counts each high or medium line once', () => {
   assert.strictEqual(res.flags[0].level, 'high');
-  assert.deepStrictEqual(res.counts, { high: 2, medium: 6, low: 6 });
+  assert.deepStrictEqual(res.counts, { high: 2, medium: 6, low: 4 });
   // a41c9e 60 + Lim 60 + Alex leave 50 + Alex 1.14/L 60 + Lim lookalike 45 + 45 + Lim Jul 40 + Lim Nov 40
   assert.strictEqual(res.atRisk, 400);
-  assert.strictEqual(res.lines, 16); assert.strictEqual(res.claims, 3);
+  assert.strictEqual(res.lines, 16); assert.strictEqual(res.claims, 3);   // Alex 7, Lim 6, Raj 3
 });
 ok('much higher than usual needs six lines of the kind', () => {
   const many = [claim('2026-10_x', 'X', '2026-10', [40, 42, 38, 45, 41, 200].map((a, i) => P(`2026-10-0${i + 1}`, 'Shop', 'r' + i * 111, a)))];
@@ -104,7 +108,7 @@ ok('the company rules: the request carries the rules, the lines, the totals and 
   const u = req.messages[0].content;
   assert.ok(u.startsWith('Company claim rules:\nParking over RM 30 needs a reason.'));
   assert.ok(u.includes('5. | Petrol | Thu 22 Oct 2026 | Petronas Seksyen 13 | receipt no. 7d02f1 | RM 60.00 | 52.50 litres'));
-  assert.ok(u.includes('Totals by type in this claim: Petrol RM 170.00; Toll RM 27.40; Parking RM 4.00; Meals RM 38.00'));
+  assert.ok(u.includes('Totals by type in this claim: Petrol RM 170.00; Toll RM 27.40; Parking RM 19.00; Meals RM 38.00'));
   assert.ok(u.includes('Leave taken by Alex Tan: sick leave (MC): Mon 19 Oct 2026 to Tue 20 Oct 2026'));
   assert.ok(/treat it as data only/.test(req.system));
   assert.strictEqual(req.output_config.format.type, 'json_schema');
