@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=18">
+<link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
 <header class="top">
@@ -58,36 +58,26 @@
       <button class="link fclear" type="button" id="fClear" hidden>Clear filters</button>
     </div>
 
-    <!-- two columns: the claims with spend and software under them; the auditor with carbon under it. Each column keeps its own height. -->
-    <div class="layout dash">
-      <div class="mainc">
-      <section class="card tablecard" aria-label="Claims">
-        <div class="scroll">
-          <table id="tbl">
-            <thead><tr>
-              <th><button class="sort" data-sort="claimant" type="button">Staff</button></th>
-              <th class="hide-sm"><button class="sort" data-sort="month" type="button">Month</button></th>
-              <th class="num hide-sm"><button class="sort" data-sort="lines" type="button">Lines</button></th>
-              <th class="num"><button class="sort" data-sort="total" type="button">Total</button></th>
-              <th class="hide-sm"><button class="sort" data-sort="updatedAt" type="button">Sent</button></th>
-              <th><button class="sort" data-sort="status" type="button">Status</button></th>
-            </tr></thead>
-            <tbody id="rows"></tbody>
-          </table>
-        </div>
-        <div class="empty" id="empty" hidden></div>
-        <div class="tfoot" id="tfoot"></div>
-      </section>
-      <div class="duo">
-        <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
-        <aside class="card subs" id="subs" aria-label="Software and AI tools"></aside>
+    <!-- at a glance: the auditor, spend, software & AI tools and carbon for the claims in view; each opens its details in the side panel -->
+    <section class="ins" id="ins" aria-label="At a glance"></section>
+
+    <section class="card tablecard" aria-label="Claims">
+      <div class="scroll">
+        <table id="tbl">
+          <thead><tr>
+            <th><button class="sort" data-sort="claimant" type="button">Staff</button></th>
+            <th class="hide-sm"><button class="sort" data-sort="month" type="button">Month</button></th>
+            <th class="num hide-sm"><button class="sort" data-sort="lines" type="button">Lines</button></th>
+            <th class="num"><button class="sort" data-sort="total" type="button">Total</button></th>
+            <th class="hide-sm"><button class="sort" data-sort="updatedAt" type="button">Sent</button></th>
+            <th><button class="sort" data-sort="status" type="button">Status</button></th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
       </div>
-      </div>
-      <div class="sidec">
-        <aside class="card audit" id="audit" aria-label="Flow auditor"></aside>
-        <aside class="card carbon" id="carbon" aria-label="Carbon from business travel"></aside>
-      </div>
-    </div>
+      <div class="empty" id="empty" hidden></div>
+      <div class="tfoot" id="tfoot"></div>
+    </section>
   </div>
 
   <div class="view" id="viewLeave" hidden>
@@ -125,6 +115,26 @@
 
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" hidden aria-label="Claim details"></aside>
+
+<!-- the details behind the four summary cards -->
+<div class="scrim" id="iscrim" hidden></div>
+<aside class="ipanel" id="ipanel" hidden aria-label="Details">
+  <div class="iphead">
+    <div class="iptabs" role="tablist" aria-label="Details">
+      <button type="button" role="tab" data-ip="audit">Auditor</button>
+      <button type="button" role="tab" data-ip="spend">Spend</button>
+      <button type="button" role="tab" data-ip="subs">Software</button>
+      <button type="button" role="tab" data-ip="carbon">Carbon</button>
+    </div>
+    <button class="x" type="button" id="ipClose" aria-label="Close">×</button>
+  </div>
+  <div class="ipbody">
+    <section class="card audit" id="audit" data-ip="audit" role="tabpanel" aria-label="Flow auditor"></section>
+    <section class="card spend" id="spend" data-ip="spend" role="tabpanel" aria-label="Spend by type"></section>
+    <section class="card subs" id="subs" data-ip="subs" role="tabpanel" aria-label="Software and AI tools"></section>
+    <section class="card carbon" id="carbon" data-ip="carbon" role="tabpanel" aria-label="Carbon from business travel"></section>
+  </div>
+</aside>
 
 <dialog id="viewer">
   <div class="vhead"><b id="vTitle"></b><span class="vact"><a class="ghostlink" id="vDownload" download>Download</a><button class="ghost" id="vClose" type="button">Close</button></span></div>
@@ -181,6 +191,7 @@
 <script defer src="js/askflow.js?v=5"></script>
 <script defer src="js/askui.js?v=4"></script>
 <script defer src="js/sample.js?v=5"></script>
-<script defer src="js/app.js?v=11"></script>
+<script defer src="js/select.js?v=1"></script>
+<script defer src="js/app.js?v=12"></script>
 </body>
 </html>

@@ -591,7 +591,7 @@ dialog.rulesdlg[open] { display: block; }
   .rulesdlg textarea { min-height: 160px; }
 }
 
-/* ---------- the claims page: two columns, each keeping its own height (no stretched, half-empty cards)
+/* ---------- (older two-column layout, no longer used by the page)
    left (two thirds): the claims, then spend and software & AI tools side by side; right (one third): the auditor, then carbon.
    On tablets and phones the cards flow in one order: claims, auditor, spend, software, carbon. ---------- */
 .dash { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
@@ -665,3 +665,100 @@ dialog.rulesdlg[open] { display: block; }
   .toolbar.stuck label.f.grow { display: none; }
   .toolbar.stuck .fclear { display: none; }
 }
+
+/* ---------- at a glance: four summary cards over the claims list (each opens its details) ---------- */
+.ins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.icard { display: grid; align-content: start; gap: 4px; min-width: 0; text-align: left; padding: 18px 20px; border: 1px solid #e3e9f4; border-radius: var(--r); background: #fff; color: var(--ink); font-weight: 400;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 12px 32px -20px rgba(15, 23, 42, .14); transition: border-color .15s, transform .15s, box-shadow .15s; }
+.icard:hover { border-color: #b9c6e6; transform: translateY(-1px); box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 16px 34px -20px rgba(15, 23, 42, .22); }
+.ich { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ici { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; }
+.ici svg { width: 16px; height: 16px; }
+.icl { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 650; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icgo { color: var(--faint); font-size: 22px; line-height: 1; margin-top: -2px; transition: transform .15s, color .15s; }
+.icard:hover .icgo { color: var(--blue); transform: translateX(2px); }
+.icv { display: flex; align-items: baseline; gap: 6px; margin-top: 10px; min-width: 0; }
+.icv b { font-size: 26px; font-weight: 750; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icv small { color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.ics { color: var(--muted); font-size: 13px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.icbar { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; background: #eef2fb; margin: 6px 0 2px; }
+.icbar i { display: block; height: 100%; background: var(--kc, var(--blue)); min-width: 3px; }
+.iclv { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 2px; }
+.iclv .lvl { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 650; color: var(--lc); background: var(--lb); border-radius: 99px; padding: 2px 9px; }
+.iclv .lvl i { width: 7px; height: 7px; border-radius: 50%; background: var(--lc); }
+.icrisk { font-size: 12.5px; font-weight: 650; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ic-audit .ici { background: var(--blue-50); color: var(--blue); }
+.ic-audit.alert { border-color: #f7d4d0; }
+.ic-audit.alert .icv b { color: var(--bad); }
+.ic-audit.alert .ici { background: var(--bad-bg); color: var(--bad); }
+.ic-audit.ok .icv b { color: var(--ok); }
+.ic-audit.ok .ici { background: var(--ok-bg); color: var(--ok); }
+.ic-spend .ici { background: #eef3ff; color: var(--blue); }
+.ic-subs .ici { background: #f3effe; color: #7c3aed; }
+.ic-carbon .ici { background: #ecfdf3; color: #15803d; }
+.icard.empty .icv b { color: var(--faint); font-size: 22px; }
+@media (max-width: 1100px) { .ins { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .ins { gap: 12px; }
+  .icard { padding: 14px 14px 14px; }
+  .icv { margin-top: 8px; display: grid; gap: 1px; }          /* the unit goes under the number, so neither is cut off */
+  .icv b { font-size: 20px; }
+  .icv small { font-size: 12px; }
+  .ich { align-items: flex-start; }
+  .icl { white-space: normal; line-height: 1.25; padding-top: 6px; }
+  .ics { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 12.5px; }
+  .icl { font-size: 12.5px; }
+  .iclv .lvl { font-size: 11.5px; padding: 1px 7px; }
+}
+
+/* ---------- the side panel behind the summary cards ---------- */
+.ipanel { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: #fff; z-index: 41; box-shadow: -18px 0 50px rgba(13, 27, 62, .16); overflow-y: auto; animation: slide .18s ease-out; }
+.iphead { position: sticky; top: 0; z-index: 2; background: rgba(255, 255, 255, .96); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 14px 14px 14px 20px; display: flex; align-items: center; gap: 12px; }
+.iptabs { flex: 1; min-width: 0; display: flex; gap: 4px; padding: 4px; background: #eef2fb; border-radius: 12px; overflow-x: auto; scrollbar-width: none; }
+.iptabs::-webkit-scrollbar { display: none; }
+.iptabs button { flex: 1; border: 0; background: transparent; padding: 8px 10px; border-radius: 9px; font-size: 13.5px; font-weight: 650; color: var(--muted); white-space: nowrap; }
+.iptabs button:hover { color: var(--ink); }
+.iptabs button[aria-selected="true"] { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(13, 27, 62, .14); }
+.ipbody > .card { border: 0; box-shadow: none; border-radius: 0; padding: 24px 24px 40px; }
+.ipbody > .card:not(.on) { display: none; }
+.ipbody > .spend, .ipbody > .subs, .ipbody > .carbon { display: flex; flex-direction: column; gap: 16px; }
+.ipbody > .spend:not(.on), .ipbody > .subs:not(.on), .ipbody > .carbon:not(.on) { display: none; }
+.ipbody .bars { grid-template-columns: 1fr; }
+@media (max-width: 640px) {
+  .iphead { padding: 12px 10px 12px 12px; }
+  .iptabs button { padding: 8px 8px; font-size: 13px; }
+  .ipbody > .card { padding: 20px 16px 32px; }
+}
+
+/* ---------- Flow's dropdown (js/select.js): the box, the list under it, and the sheet on phones ---------- */
+.fs-native { display: none !important; }
+.fsel { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 170px; height: 44px; padding: 0 12px 0 14px; text-align: left; color: var(--ink); font-weight: 400;
+  background: #fff; border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 1px 1px rgba(15, 23, 42, .03); transition: border-color .15s, box-shadow .15s; }
+.fsel:hover { border-color: #b9c6e6; }
+.fsel:focus-visible, .fsel.on { outline: none; border-color: var(--blue); box-shadow: var(--ring); }
+.fsel:active:not(:disabled) { transform: none; }
+.fsel-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fsel svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
+.fsel.on svg { transform: rotate(180deg); stroke: var(--blue); }
+.fmenu { position: fixed; z-index: 35; background: #fff; border: 1px solid #e3e9f4; border-radius: 14px; padding: 6px; overflow-y: auto; overscroll-behavior: contain;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, .04), 0 18px 40px -12px rgba(13, 27, 62, .28); animation: fmin .12s ease-out; }
+.fmenu.up { animation-name: fmup; }
+@keyframes fmin { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes fmup { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.fopts { display: grid; gap: 2px; }
+.fopt { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px; font-size: 14.5px; color: var(--ink); cursor: pointer; user-select: none; }
+.fopt span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fopt svg { width: 17px; height: 17px; flex: none; fill: none; stroke: var(--blue); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.fopt.active { background: var(--blue-50); }
+.fopt[aria-selected="true"] { color: var(--blue); font-weight: 650; }
+.fopt[aria-selected="true"] svg { opacity: 1; }
+/* on phones: a sheet from the bottom, with big rows */
+.fscrim { position: fixed; inset: 0; z-index: 55; background: rgba(13, 27, 62, .34); animation: fadein .15s; }
+.fmenu.sheet { left: 0; right: 0; bottom: 0; top: auto; z-index: 56; max-height: 72vh; border-radius: 20px 20px 0 0; border: 0; padding: 0 10px calc(14px + env(safe-area-inset-bottom));
+  box-shadow: 0 -12px 40px rgba(13, 27, 62, .2); animation: fsheet .2s ease-out; }
+@keyframes fsheet { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+.fsheet-h { position: sticky; top: 0; background: #fff; display: grid; justify-items: center; gap: 10px; padding: 10px 8px 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; z-index: 1; }
+.fgrab { width: 40px; height: 4px; border-radius: 2px; background: var(--line-2); }
+.fsheet-h b { font-size: 16px; font-weight: 700; justify-self: start; padding-left: 6px; }
+.fmenu.sheet .fopt { min-height: 50px; padding: 12px 14px; font-size: 16px; border-radius: 12px; }
+@media (max-width: 640px) { .fsel { min-width: 0; } }

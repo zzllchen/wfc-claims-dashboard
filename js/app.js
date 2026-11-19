@@ -248,7 +248,7 @@
   /* ---------- drawing the page ---------- */
   function render() {
     paintTop(); paintTabs(); paintBanner();
-    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintAudit(); paintSpend(); paintSubs(); paintCarbon(); }
+    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintAudit(); paintSpend(); paintSubs(); paintCarbon(); paintGlance(); }
     if (S.open) {                  // the panel is only redrawn when its claim changed, so a note being typed is not wiped by the 20-second refresh
       const c = find(S.open);
       if (!c) closeDrawer(); else if (S.drawerSig !== drawerSigOf(c)) paintDrawer(true);
@@ -270,6 +270,7 @@
   function setView(v, keepUrl) {
     const next = v === 'leave' ? 'leave' : 'claims';
     if (next !== S.view && S.open) closeDrawer();
+    if (next !== S.view && S.ip) closeInsight();
     S.view = next;
     $('#viewClaims').hidden = next !== 'claims'; $('#viewLeave').hidden = next !== 'leave';
     document.querySelectorAll('#exportMenu [data-view]').forEach((b) => { b.hidden = b.dataset.view !== next; });
@@ -305,6 +306,7 @@
       sel.dataset.sig = sig;
     }
     sel.value = options.some((o) => o[0] === value) ? value : options[0][0];
+    if (window.FlowSelect) window.FlowSelect.sync(sel);          // Flow's own dropdown shows the same choice
   }
 
   function paintFilters() {
@@ -396,8 +398,7 @@
     const box = $('#audit'); if (!box) return;
     box.textContent = '';
     const a = auditNow();
-    if (!a) { box.hidden = true; return; }
-    box.hidden = false;
+    if (!a) return;
     const inv = all().filter(inView), ids = new Set(inv.map((c) => c.id));
     const flags = a.flags.filter((f) => ids.has(f.claimId));
     const nLines = inv.reduce((n, c) => n + c.lines.length, 0);
@@ -426,6 +427,71 @@
       if (flags.length > shown.length || S.auditAll) box.append(h('button', { class: 'link aud-more', type: 'button', text: S.auditAll ? 'Show fewer' : `Show all ${flags.length}`, onclick: () => { S.auditAll = !S.auditAll; paintAudit(); } }));
     }
     box.append(h('div', { class: 'how' }, h('b', { text: 'How it works. ' }), 'Each line is checked against every claim, from everyone, in every month, and against your company rules (read by Claude). Flags are for you to look at; nothing is refused on its own.'));
+  }
+
+  /* ---------- at a glance: four summary cards over the claims list; each opens its full details in the side panel ---------- */
+  const BARS = svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>');
+  const GLANCE_ICON = { audit: () => SHIELD, spend: () => BARS, subs: () => LAYERS, carbon: () => LEAF };
+  function paintGlance() {
+    const box = $('#ins'); if (!box) return;
+    const inv = all().filter(inView), ids = new Set(inv.map((c) => c.id));
+    const nLines = inv.reduce((n, c) => n + c.lines.length, 0);
+    const card = (key, cls, label, value, unit, sub, extra) => {
+      const ic = h('span', { class: 'ici' }); ic.innerHTML = GLANCE_ICON[key]();
+      return h('button', { class: `icard ic-${key} ${cls || ''}`, type: 'button', 'aria-label': `${label}: ${value}${unit ? ' ' + unit : ''}. Open the details.`, onclick: () => openInsight(key) },
+        h('span', { class: 'ich' }, ic, h('span', { class: 'icl', text: label }), h('span', { class: 'icgo', 'aria-hidden': 'true', text: '›' })),
+        h('span', { class: 'icv' }, h('b', { text: value }), unit ? h('small', { text: unit }) : null),
+        extra || null,
+        h('span', { class: 'ics', text: sub }));
+    };
+    box.textContent = '';
+    // the auditor
+    const a = auditNow(), flags = a ? a.flags.filter((f) => ids.has(f.claimId)) : [];
+    const serious = flags.filter((f) => f.level !== 'low'), lows = flags.length - serious.length;
+    const ruleNote = S.pol.busy ? `Checking against your rules: ${S.pol.done} of ${S.pol.total}` : '';
+    if (serious.length) {
+      const counts = { high: 0, medium: 0 };
+      serious.forEach((f) => { counts[f.level]++; });
+      box.append(card('audit', 'alert', 'Flow auditor', String(serious.length), 'to check', ruleNote || `${money(atRiskOf(flags))} on these lines`,
+        h('span', { class: 'iclv' }, ['high', 'medium'].filter((l) => counts[l]).map((l) => h('span', { class: `lvl lvl-${l}` }, h('i'), `${LEVEL_WORD[l]} ${counts[l]}`)))));
+    } else {
+      box.append(card('audit', 'ok', 'Flow auditor', nLines ? 'All clear' : '–', '', ruleNote || (!nLines ? 'No claims in this view' : lows ? `${lows} small point${lows > 1 ? 's' : ''} to glance at` : `${nLines} lines checked`)));
+    }
+    // spend by type, as one bar
+    const by = new Map();
+    inv.forEach((c) => c.lines.forEach((l) => { const k = kindOf(l.category); by.set(k, (by.get(k) || 0) + (Number(l.amount) || 0)); }));
+    const rows = Array.from(by).sort((x, y) => y[1] - x[1]), sum = rows.reduce((t, r) => t + r[1], 0);
+    const bar = h('span', { class: 'icbar' }, rows.map(([k, v]) => { const i = h('i', { class: `k-${k}`, title: `${KIND_LABEL[k]} ${money(v)}` }); i.style.width = (v / (sum || 1) * 100).toFixed(2) + '%'; return i; }));
+    box.append(card('spend', '', 'Spend', money(sum), '', rows.length ? rows.slice(0, 2).map(([k, v]) => `${KIND_LABEL[k]} ${Math.round(v / sum * 100)}%`).join(' · ') : 'Nothing claimed in this view', rows.length ? bar : null));
+    // software & AI tools
+    const sr = window.Subs ? window.Subs.find(subsScope()) : null;
+    if (sr && sr.tools.length) {
+      const t = sr.totals, notes = sr.insights.length;
+      box.append(card('subs', notes ? 'note' : '', 'Software & AI tools', money(t.monthly || t.claimed), t.monthly ? 'a month' : 'claimed',
+        [`${t.tools} tool${t.tools === 1 ? '' : 's'}`, notes ? `${notes} thing${notes === 1 ? '' : 's'} to look at` : t.monthly ? `about ${money(t.yearly)} a year` : ''].filter(Boolean).join(' · ')));
+    } else box.append(card('subs', 'empty', 'Software & AI tools', 'None yet', '', 'No subscriptions in these claims'));
+    // carbon
+    const C = window.Carbon, cs = C ? C.summarise(inv) : null;
+    if (cs && cs.slips) { const [num, unit] = C.weight(cs.kg).split(' '); box.append(card('carbon', '', 'Carbon', num, `${unit} CO₂e`, `${cs.slips} fuel slip${cs.slips > 1 ? 's' : ''} · business travel`)); }
+    else box.append(card('carbon', 'empty', 'Carbon', '–', '', 'No fuel claims in this view'));
+  }
+
+  /* the side panel with the full details: the auditor, spend, software & AI tools, carbon (tabs at the top) */
+  function openInsight(key) {
+    if (S.open) closeDrawer();
+    const first = !S.ip;
+    S.ip = key;
+    if (first) S.ipFocus = document.activeElement;
+    $('#iscrim').hidden = false; $('#ipanel').hidden = false; document.body.style.overflow = 'hidden';
+    document.querySelectorAll('#ipanel .iptabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.ip === key)));
+    document.querySelectorAll('#ipanel .ipbody > .card').forEach((c) => c.classList.toggle('on', c.dataset.ip === key));
+    $('#ipanel').scrollTop = 0;
+    if (first) { const t = $(`#ipanel .iptabs button[data-ip="${key}"]`); if (t) t.focus({ preventScroll: true }); }
+  }
+  function closeInsight(keepScrollLock) {
+    S.ip = null;
+    $('#iscrim').hidden = true; $('#ipanel').hidden = true;
+    if (!keepScrollLock) { document.body.style.overflow = ''; if (S.ipFocus && document.contains(S.ipFocus)) S.ipFocus.focus({ preventScroll: true }); }
   }
 
   /* ---------- the company's claim rules ---------- */
@@ -488,8 +554,7 @@
   function paintSubs() {
     const box = $('#subs'); if (!box) return;
     box.textContent = '';
-    if (!window.Subs) { box.hidden = true; return; }
-    box.hidden = false;
+    if (!window.Subs) return;
     const r = window.Subs.find(subsScope());
     const title = h('h2', {}); title.innerHTML = LAYERS; title.append('Software & AI tools');
     box.append(h('div', { class: 'chead' }, title, h('div', { class: 'sub', text: `${S.f.staff === 'all' ? 'Everyone' : S.f.staff} · every month on record` })));
@@ -662,6 +727,7 @@
 
   /* ---------- one claim, in the side panel ---------- */
   function openDrawer(id, line) {
+    if (S.ip) closeInsight(true);
     if (!S.open) S.lastFocus = document.activeElement;
     S.open = id;
     $('#scrim').hidden = false; $('#drawer').hidden = false; document.body.style.overflow = 'hidden';
@@ -950,6 +1016,7 @@
   /* ---------- start ---------- */
   function init() {
     croppedLogo().then((u) => { $('#brandLogo').src = u; }).catch(() => $('#brandLogo').remove());
+    if (window.FlowSelect) ['#fMonth', '#fStaff', '#lMonth', '#lStaff'].forEach((s) => window.FlowSelect.enhance($(s)));
     $('#fMonth').addEventListener('change', (e) => { S.f.month = e.target.value; render(); });
     $('#fStaff').addEventListener('change', (e) => { S.f.staff = e.target.value; render(); });
     $('#fSearch').addEventListener('input', (e) => { S.f.q = e.target.value; render(); });
@@ -995,6 +1062,9 @@
     $('#btnLock').addEventListener('click', () => { Inbox.clearKey(); S.real = []; S.realLeave = []; S.prev = null; S.sample = false; render(); showLock(''); });
     croppedLogo().then((u) => { $('#lockLogo').src = u; }).catch(() => $('#lockLogo').remove());
     $('#scrim').addEventListener('click', closeDrawer);
+    $('#iscrim').addEventListener('click', () => closeInsight());
+    $('#ipClose').addEventListener('click', () => closeInsight());
+    document.querySelectorAll('#ipanel .iptabs button').forEach((b) => b.addEventListener('click', () => openInsight(b.dataset.ip)));
     $('#vClose').addEventListener('click', () => $('#viewer').close());
     $('#viewer').addEventListener('click', (e) => { if (e.target === $('#viewer')) $('#viewer').close(); });
     const menu = $('#exportMenu'), mb = $('#btnExport');
@@ -1004,7 +1074,7 @@
     document.addEventListener('click', () => setMenu(false));
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (!menu.hidden) setMenu(false); else if (!$('#viewer').open && S.open) closeDrawer();
+      if (!menu.hidden) setMenu(false); else if (!$('#viewer').open && S.open) closeDrawer(); else if (S.ip && !$('#rulesDlg').open) closeInsight();
     });
     document.addEventListener('visibilitychange', () => { if (!document.hidden && S.connected && !S.sample) load(true); });
     setInterval(() => { if (!document.hidden && S.connected && !S.sample && !S.saving) load(true); }, 20000);
