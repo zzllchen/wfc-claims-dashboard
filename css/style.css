@@ -139,7 +139,7 @@ tr.fresh td { animation: fresh 5s ease-out; }
 .empty p { margin: 0; max-width: 420px; }
 
 /* spend by type: ranked bars, one colour */
-.side { display: grid; gap: 20px; position: sticky; top: 92px; align-self: start; }      /* spend and carbon, side by side with the table */
+.side { display: grid; gap: 20px; align-self: start; }      /* the auditor, spend and carbon, beside the table (not sticky: together they can be taller than the screen) */
 .spend { padding: 24px 24px; display: grid; gap: 16px; }
 .spend h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
 .spend .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -512,4 +512,73 @@ body.af-open { overflow: hidden; }
   .af-table tbody td { display: table-cell; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; grid-column: auto; grid-row: auto; text-align: left; justify-self: auto; }
   .af-table tbody td.num { text-align: right; }
   .af-table tbody tr:last-child td { border-bottom: 0; }
+}
+
+/* ---------- Flow auditor ---------- */
+.lvl-high { --lc: var(--bad); --lb: var(--bad-bg); --lr: #fecdca; }
+.lvl-medium { --lc: var(--warn); --lb: var(--warn-bg); --lr: #fbd9b4; }
+.lvl-low { --lc: var(--faint); --lb: #f4f6fb; --lr: var(--line); }
+.audit { padding: 24px; display: grid; gap: 14px; }
+.audit[hidden] { display: none; }
+.audit .ahead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.audit h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+.audit h2 svg { width: 18px; height: 18px; color: var(--blue); flex: none; }
+.audit .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.audit .ahead button { flex: none; white-space: nowrap; }
+.audit .none { color: var(--muted); font-size: 13.5px; }
+.aud-num { display: flex; align-items: center; gap: 12px; }
+.aud-num b { font-size: 34px; font-weight: 750; letter-spacing: -.02em; line-height: 1; color: var(--bad); font-variant-numeric: tabular-nums; }
+.aud-num span { color: var(--ink); font-size: 15px; font-weight: 650; display: grid; gap: 2px; line-height: 1.2; }
+.aud-num small { color: var(--muted); font-size: 13px; font-weight: 500; }
+.aud-num.clear b { color: var(--ok); font-size: 26px; }
+.aud-what { margin: -2px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.aud-what .busy { color: var(--blue); }
+.aud-what .err { color: var(--bad); }
+.aud-levels { display: flex; gap: 8px; flex-wrap: wrap; }
+.aud-levels .lvl { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 650; color: var(--lc); background: var(--lb); border-radius: 99px; padding: 3px 10px; }
+.aud-levels .lvl i, .ldot { width: 8px; height: 8px; border-radius: 50%; background: var(--lc); flex: none; display: inline-block; }
+.aud-list { display: grid; gap: 8px; }
+.aud-item { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 12px; align-items: start; width: 100%; text-align: left; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); font-weight: 400; box-shadow: none; cursor: pointer; transition: background .12s, border-color .12s; }
+.aud-item:hover { border-color: var(--lr); background: var(--lb); }
+.aud-item .ldot, .aflag .ldot { margin-top: 6px; }
+.aud-body { display: grid; gap: 3px; min-width: 0; }
+.aud-body b { font-size: 14px; font-weight: 650; }
+.aud-why { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.aud-list .aud-why { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.aud-meta { color: var(--faint); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.aud-more { justify-self: start; font-size: 13.5px; }
+.audit .how { font-size: 12.5px; color: var(--faint); line-height: 1.45; border-top: 1px solid var(--line); padding-top: 12px; }
+.audit .how b { color: var(--muted); font-weight: 650; }
+/* the flag beside a name in the claims list */
+.flagchip { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 700; color: var(--lc); background: var(--lb); border-radius: 99px; padding: 1px 8px 1px 6px; font-variant-numeric: tabular-nums; flex: none; }
+.flagchip svg { width: 13px; height: 13px; }
+/* in a claim's side panel */
+.audsec h3 { display: flex; align-items: center; gap: 10px; }
+.audsec h3 .cnt { text-transform: none; letter-spacing: 0; font-weight: 650; color: var(--bad); background: var(--bad-bg); border-radius: 99px; padding: 1px 9px; font-size: 12px; }
+.aflag { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--lb); border: 1px solid var(--lr); }
+.aflag + .aflag { margin-top: 8px; }
+.aflag b { font-size: 14px; font-weight: 650; color: var(--ink); }
+.aflag .aud-why { color: #344054; margin-top: 2px; }
+.aflag .aud-meta { margin-top: 6px; color: var(--muted); }
+.aflag .aud-meta .link { font-size: 12.5px; padding: 0; }
+.ln .lnflag { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 650; color: var(--lc); }
+.ln .lnflag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lc); flex: none; }
+.ln.pulse { animation: lnpulse 2.2s ease-out; border-radius: 10px; }
+@keyframes lnpulse { 0%, 35% { background: var(--lb, #f4f7ff); box-shadow: 0 0 0 8px var(--lb, #f4f7ff); } 100% { background: transparent; box-shadow: 0 0 0 8px transparent; } }
+/* the company rules box */
+dialog.rulesdlg { width: min(640px, 94vw); height: auto; max-height: 92vh; overflow: auto; }
+dialog.rulesdlg[open] { display: block; }
+.rulesdlg form { padding: 26px 28px 24px; display: grid; gap: 12px; }
+.rulesdlg h2 { margin: 0; font-size: 20px; font-weight: 750; letter-spacing: -.02em; }
+.rl-lead { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.rulesdlg textarea { width: 100%; min-height: 230px; resize: vertical; font-size: 14.5px; line-height: 1.55; padding: 12px 14px; border-radius: 12px; }
+.rl-under { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12.5px; color: var(--faint); }
+.rl-under .link { font-size: 13.5px; padding: 0; }
+.rl-note { margin: 0; color: var(--muted); font-size: 13px; }
+.rl-acts { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+@media (max-width: 640px) {
+  .audit { padding: 20px 18px; }
+  dialog.rulesdlg { width: 100vw; max-width: 100vw; height: auto; max-height: 94vh; margin: auto 0 0; border-radius: 18px 18px 0 0; }
+  .rulesdlg form { padding: 22px 18px calc(18px + env(safe-area-inset-bottom)); }
+  .rulesdlg textarea { min-height: 160px; }
 }

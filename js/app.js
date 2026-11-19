@@ -85,9 +85,95 @@
     f: { month: 'all', staff: 'all', status: 'all', q: '' }, sort: { key: 'updatedAt', dir: -1 },
     lf: { month: 'all', staff: 'all', status: 'all', q: '' }, lsort: { key: 'start', dir: -1 },        // the same, for the Leave tab
     open: null, prev: null, fresh: new Set(), saving: 0, blobs: new Map(), lastFocus: null, drawerSig: '', draft: { id: '', text: null },
+    rules: null, sampleRules: null, photoMatches: [], photoBusy: false, pol: { busy: false, done: 0, total: 0, error: '', again: false }, audit: null, auditSig: '', auditAll: false,   // Flow's auditor
   };
   const all = () => (S.sample ? S.sampleList : S.real);
   const find = (id) => all().find((c) => c.id === id) || (S.sample ? S.sampleLeave : S.realLeave).find((c) => c.id === id);
+
+  /* ---------- Flow's auditor (js/audit.js): fixed checks on every line, plus the company's own rules read by Claude through the inbox ---------- */
+  const AUD = window.Audit;
+  const POLICY_STORE = 'wfc-audit-rules-v1', PHOTO_STORE = 'wfc-audit-photos-v1', LOCAL_RULES = 'wfc-audit-rules-local';
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* full, or private mode */ } },
+  };
+  // the sample view can try rules out without saving them; otherwise the company's rules from the inbox (or this computer, for an older inbox)
+  const rulesText = () => (S.sample && S.sampleRules != null ? S.sampleRules : (S.rules && S.rules.text) || '');
+  function auditNow() {
+    if (!AUD) return null;
+    const list = all(), lv = leaveAll(), rules = rulesText(), policy = {};
+    if (rules) { const saved = store.get(POLICY_STORE); list.forEach((c) => { const hit = saved[AUD.policyKey(c, rules)]; if (hit) policy[c.id] = hit.f; }); }
+    const sig = [list.map(sigOf).join(','), lv.map((v) => v.id + v.updatedAt).join(','), rules, Object.keys(policy).join(','), S.photoMatches.length, S.sample].join('|');
+    if (sig !== S.auditSig) { S.audit = AUD.run(list, lv, { policy, photoMatches: S.sample ? [] : S.photoMatches }); S.auditSig = sig; }
+    return S.audit;
+  }
+  const flagsFor = (id) => { const a = auditNow(); return (a && a.byClaim[id]) || []; };
+  // the money on lines with a high or medium flag, each line once
+  const atRiskOf = (flags) => { const m = new Map(); flags.forEach((f) => { if (f.level !== 'low' && !f.wholeClaim) m.set(`${f.claimId}#${f.line}`, f.amount); }); return Array.from(m.values()).reduce((a, n) => a + n, 0); };
+
+  /* the company's rules, one claim at a time: each answer is kept in this browser under a key that changes with the claim or the rules */
+  let polTimer = 0;
+  const schedulePolicy = () => { clearTimeout(polTimer); polTimer = setTimeout(runPolicy, 800); };
+  async function runPolicy() {
+    const rules = rulesText();
+    if (!AUD || !rules || S.locked || !Inbox.askOk || (Inbox.needsKey && !Inbox.hasKey())) return;
+    if (S.pol.busy) { S.pol.again = true; return; }
+    const saved = store.get(POLICY_STORE);
+    const todo = all().filter((c) => !saved[AUD.policyKey(c, rules)]).slice(0, 40);
+    if (!todo.length) { if (S.pol.error) { S.pol.error = ''; render(); } return; }
+    S.pol = { busy: true, done: 0, total: todo.length, error: '', again: false };
+    render();
+    for (const c of todo) {
+      if (rulesText() !== rules) break;                     // the rules changed meanwhile: start again with the new ones
+      try {
+        const found = AUD.policyFindings(await Inbox.ask(AUD.policyRequest(c, leaveAll(), rules)), c);
+        const st = store.get(POLICY_STORE);
+        st[AUD.policyKey(c, rules)] = { at: Date.now(), f: found };
+        const keys = Object.keys(st);
+        if (keys.length > 300) keys.sort((a, b) => st[a].at - st[b].at).slice(0, keys.length - 300).forEach((k) => { delete st[k]; });
+        store.set(POLICY_STORE, st);
+      } catch (e) {
+        S.pol.busy = false;
+        if (e && e.code === 401) { Inbox.clearKey(); showLock('The password was changed. Enter the new one.'); return; }
+        S.pol.error = (e && e.message) || String(e);
+        break;
+      }
+      S.pol.done++;
+      render();
+    }
+    const again = S.pol.again;
+    S.pol.busy = false; S.pol.again = false;
+    render();
+    if (again || rulesText() !== rules) schedulePolicy();
+  }
+
+  /* the same receipt photo on two lines: files of the same size and type are fetched and their fingerprints (SHA-256) compared */
+  async function checkPhotos() {
+    if (!AUD || S.sample || S.photoBusy || !(window.crypto && crypto.subtle)) return;
+    const pairs = AUD.photoCandidates(S.real).slice(0, 12);
+    if (!pairs.length) { if (S.photoMatches.length) { S.photoMatches = []; render(); } return; }
+    S.photoBusy = true;
+    const hashes = store.get(PHOTO_STORE), matches = [];
+    const hashOf = async (p) => {
+      const k = `${p.claimId}|${p.version}|${p.fileId}`;
+      if (!hashes[k]) {
+        const c = S.real.find((x) => x.id === p.claimId), f = c && (c.files || []).find((x) => x.id === p.fileId);
+        if (!f) return '';
+        const buf = await crypto.subtle.digest('SHA-256', await (await fetchBlob(c, f)).arrayBuffer());
+        hashes[k] = Array.from(new Uint8Array(buf).slice(0, 16)).map((b) => b.toString(16).padStart(2, '0')).join('');
+      }
+      return hashes[k];
+    };
+    try {
+      for (const pr of pairs) {
+        const a = await hashOf(pr.a), b = await hashOf(pr.b);
+        if (a && a === b) matches.push({ a: { claimId: pr.a.claimId, line: pr.a.line }, b: { claimId: pr.b.claimId, line: pr.b.line } });
+      }
+    } catch (e) { /* a file could not be fetched: tried again on the next refresh */ }
+    store.set(PHOTO_STORE, Object.keys(hashes).length > 600 ? {} : hashes);
+    S.photoBusy = false;
+    if (JSON.stringify(matches) !== JSON.stringify(S.photoMatches)) { S.photoMatches = matches; render(); }
+  }
 
   function matchesQuery(c, q) {
     if (!q) return true;
@@ -116,6 +202,8 @@
       hideLock();
       S.connected = true; S.error = ''; S.loadedAt = new Date();
       if (!S.saving) applyClaims(got.claims, got.leave);
+      S.rules = got.rules || (Inbox.rulesOk ? null : (store.get(LOCAL_RULES).text ? store.get(LOCAL_RULES) : null));
+      schedulePolicy(); checkPhotos();
     } catch (e) {
       if (e && e.code === 401) { Inbox.clearKey(); S.real = []; S.realLeave = []; S.prev = null; showLock(S.askedPw ? "That password isn't right." : ''); return; }
       S.error = (e && e.message) || String(e);
@@ -159,13 +247,14 @@
   /* ---------- drawing the page ---------- */
   function render() {
     paintTop(); paintTabs(); paintBanner();
-    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintSpend(); paintCarbon(); }
+    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintAudit(); paintSpend(); paintCarbon(); }
     if (S.open) {                  // the panel is only redrawn when its claim changed, so a note being typed is not wiped by the 20-second refresh
       const c = find(S.open);
-      if (!c) closeDrawer(); else if (S.drawerSig !== sigOf(c)) paintDrawer(true);
+      if (!c) closeDrawer(); else if (S.drawerSig !== drawerSigOf(c)) paintDrawer(true);
     }
   }
   const sigOf = (c) => [c.id, c.version, c.updatedAt, c.status, c.note, (c.history || []).length, S.sample].join('|');
+  const drawerSigOf = (c) => sigOf(c) + '|' + (c.kind === 'leave' ? '' : flagsFor(c.id).map((f) => f.key).join(','));
 
   /* the two tabs, each with how many are still New */
   function paintTabs() {
@@ -200,7 +289,7 @@
     box.textContent = '';
     if (S.sample) {
       box.append(h('div', { class: 'banner' }, h('b', { text: 'Sample claims and leave.' }), 'Made-up examples to show how this page looks. None of it is real, and nothing you click here is saved.',
-        h('button', { class: 'link', type: 'button', text: 'Back to real data', onclick: () => { S.sample = false; S.open = null; closeDrawer(); render(); } })));
+        h('button', { class: 'link', type: 'button', text: 'Back to real data', onclick: () => { S.sample = false; S.open = null; closeDrawer(); render(); schedulePolicy(); } })));
     } else if (S.error && S.connected) {
       box.append(h('div', { class: 'banner warn' }, `Couldn't refresh (${S.error}). Showing the last list.`, h('button', { class: 'link', type: 'button', text: 'Try again', onclick: () => load() })));
     }
@@ -248,7 +337,7 @@
     list.forEach((c) => {
       const open = () => openDrawer(c.id);
       rows.append(h('tr', { tabindex: '0', 'data-id': c.id, class: S.fresh.has(c.id) ? 'fresh' : '', onclick: open, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } } },
-        h('td', {}, h('div', { class: 'who' }, c.claimant, c.sample ? h('span', { class: 'tag', text: 'Sample' }) : null), h('div', { class: 'sub show-sm', text: `${c.monthLabel} · ${c.lines.length} lines · ${ago(c.updatedAt)}` })),
+        h('td', {}, h('div', { class: 'who' }, c.claimant, c.sample ? h('span', { class: 'tag', text: 'Sample' }) : null, flagChip(c)), h('div', { class: 'sub show-sm', text: `${c.monthLabel} · ${c.lines.length} lines · ${ago(c.updatedAt)}` })),
         h('td', { class: 'hide-sm', text: c.monthLabel }),
         h('td', { class: 'num hide-sm', text: String(c.lines.length) }),
         h('td', { class: 'num total', text: money(c.total) }),
@@ -283,7 +372,85 @@
   function showSample() {
     S.sample = true; S.sampleList = WFC_SAMPLE(); S.sampleLeave = WFC_SAMPLE_LEAVE();
     S.f = { month: 'all', staff: 'all', status: 'all', q: '' }; S.lf = { month: 'all', staff: 'all', status: 'all', q: '' };
-    $('#fSearch').value = ''; $('#lSearch').value = ''; render();
+    $('#fSearch').value = ''; $('#lSearch').value = ''; S.sampleRules = null; render(); schedulePolicy();
+  }
+
+  const scopeText = () => [S.f.month === 'all' ? 'All months' : (all().find((c) => c.month === S.f.month) || {}).monthLabel, S.f.staff === 'all' ? null : S.f.staff, S.f.status === 'all' ? null : STATUS[S.f.status]].filter(Boolean).join(' · ');
+
+  /* ---------- the auditor card: what to check before paying, in the claims in view ---------- */
+  const SHIELD = svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>');
+  const FLAG = svg('<path d="M5 21V4"/><path d="M5 4h11l-2.5 4L16 12H5"/>');
+  const LEVEL_WORD = { high: 'High', medium: 'Medium', low: 'Low' };
+  function flagChip(c) {
+    const fl = flagsFor(c.id).filter((f) => f.level !== 'low');
+    if (!fl.length) return null;
+    const e = h('span', { class: `flagchip lvl-${fl[0].level}`, title: `${fl.length} thing${fl.length > 1 ? 's' : ''} to check (Flow auditor)` });
+    e.innerHTML = FLAG; e.append(String(fl.length));
+    return e;
+  }
+  const flagMeta = (f) => [f.staff, f.monthLabel, f.wholeClaim ? 'whole claim' : `line ${f.line}`, f.wholeClaim ? '' : money(f.amount)].filter(Boolean).join(' · ');
+  function paintAudit() {
+    const box = $('#audit'); if (!box) return;
+    box.textContent = '';
+    const a = auditNow();
+    if (!a) { box.hidden = true; return; }
+    box.hidden = false;
+    const inv = all().filter(inView), ids = new Set(inv.map((c) => c.id));
+    const flags = a.flags.filter((f) => ids.has(f.claimId));
+    const nLines = inv.reduce((n, c) => n + c.lines.length, 0);
+    const counts = { high: 0, medium: 0, low: 0 };
+    flags.forEach((f) => { counts[f.level]++; });
+    const serious = counts.high + counts.medium, rules = rulesText();
+    const title = h('h2', {}); title.innerHTML = SHIELD; title.append('Flow auditor');
+    box.append(h('div', { class: 'ahead' }, h('div', {}, title, h('div', { class: 'sub', text: scopeText() })),
+      h('button', { class: 'ghost sm', type: 'button', text: rules ? 'Company rules' : 'Add company rules', onclick: openRules })));
+    if (!nLines) { box.append(h('div', { class: 'none', text: 'No claims in this view.' })); return; }
+    box.append(serious
+      ? h('div', { class: 'aud-num' }, h('b', { text: String(serious) }), h('span', {}, `to check`, h('small', { text: `${money(atRiskOf(flags))} on these lines` })))
+      : h('div', { class: 'aud-num clear' }, h('b', { text: 'All clear' }), h('span', {}, h('small', { text: counts.low ? `${counts.low} small point${counts.low > 1 ? 's' : ''} below` : 'Nothing to check' }))));
+    const ruleNote = !rules ? ' Add your company rules to check claims against them too.'
+      : S.pol.busy ? ` Checking against your rules: ${S.pol.done} of ${S.pol.total} claims…`
+        : S.pol.error ? ` The rule check stopped: ${S.pol.error}`
+          : !Inbox.askOk ? ' The rule check needs the Google inbox.' : ' Also checked against your company rules.';
+    box.append(h('p', { class: 'aud-what' }, `Checked ${nLines} line${nLines > 1 ? 's' : ''} on ${inv.length} claim${inv.length > 1 ? 's' : ''}.`, h('span', { class: S.pol.busy ? 'busy' : S.pol.error ? 'err' : '', text: ruleNote })));
+    if (flags.length) box.append(h('div', { class: 'aud-levels' }, AUD.LEVELS.filter((l) => counts[l]).map((l) => h('span', { class: `lvl lvl-${l}` }, h('i'), `${LEVEL_WORD[l]} ${counts[l]}`))));
+    const top = flags.filter((f) => f.level !== 'low');
+    const shown = S.auditAll ? flags : (top.length ? top : flags).slice(0, 5);
+    if (shown.length) {
+      box.append(h('div', { class: 'aud-list' }, shown.map((f) => h('button', { class: `aud-item lvl-${f.level}`, type: 'button', title: 'Open this claim', onclick: () => openDrawer(f.claimId, f.line) },
+        h('i', { class: 'ldot' }),
+        h('span', { class: 'aud-body' }, h('b', { text: f.title }), h('span', { class: 'aud-why', text: f.reason }), h('span', { class: 'aud-meta', text: flagMeta(f) }))))));
+      if (flags.length > shown.length || S.auditAll) box.append(h('button', { class: 'link aud-more', type: 'button', text: S.auditAll ? 'Show fewer' : `Show all ${flags.length}`, onclick: () => { S.auditAll = !S.auditAll; paintAudit(); } }));
+    }
+    box.append(h('div', { class: 'how' }, h('b', { text: 'How it works. ' }), 'Every line is checked against every claim from everyone, in every month: the same receipt twice, the same purchase twice, claims on leave days, fuel figures, dates. Your company rules are read by Claude. Flags are for you to look at; nothing is refused on its own.'));
+  }
+
+  /* ---------- the company's claim rules ---------- */
+  const countRules = () => { $('#rulesCount').textContent = `${$('#rulesText').value.length.toLocaleString('en-US')} / 4,000`; };
+  function openRules() {
+    const ta = $('#rulesText');
+    ta.value = rulesText();
+    $('#rulesNote').textContent = S.sample ? 'Sample view: rules typed here are tried on the sample claims only and are not saved.'
+      : !Inbox.rulesOk ? "This inbox can't keep rules yet, so they are kept on this computer only."
+        : S.rules && S.rules.updatedAt && S.rules.text ? `Saved for everyone who opens this page. Last changed ${fullWhen(S.rules.updatedAt)}.` : 'Saved for everyone who opens this page.';
+    countRules();
+    $('#rulesDlg').showModal();
+    ta.focus();
+  }
+  async function saveRules() {
+    const text = $('#rulesText').value.trim(), btn = $('#rulesSave');
+    if (S.sample) { S.sampleRules = text; $('#rulesDlg').close(); toast(text ? 'Trying the rules on the sample claims (not saved)' : 'Rules cleared (sample only)'); render(); schedulePolicy(); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      if (Inbox.rulesOk) S.rules = await Inbox.saveRules(text);
+      else { S.rules = { text, updatedAt: new Date().toISOString() }; store.set(LOCAL_RULES, S.rules); }
+      $('#rulesDlg').close();
+      toast(text ? 'Rules saved. Checking the claims against them…' : 'Rules cleared');
+      render(); schedulePolicy();
+    } catch (e) {
+      if (e && e.code === 401) { $('#rulesDlg').close(); Inbox.clearKey(); showLock('The password was changed. Enter the new one.'); }
+      else toast("Couldn't save the rules: " + ((e && e.message) || e), true);
+    } finally { btn.disabled = false; btn.textContent = 'Save rules'; }
   }
 
   function paintSpend() {
@@ -292,7 +459,7 @@
     list.forEach((c) => c.lines.forEach((l) => { const k = kindOf(l.category); by.set(k, (by.get(k) || 0) + (Number(l.amount) || 0)); }));
     const rows = Array.from(by).sort((a, b) => b[1] - a[1]);
     const sum = rows.reduce((a, r) => a + r[1], 0);
-    const scope = [S.f.month === 'all' ? 'All months' : (all().find((c) => c.month === S.f.month) || {}).monthLabel, S.f.staff === 'all' ? null : S.f.staff, S.f.status === 'all' ? null : STATUS[S.f.status]].filter(Boolean).join(' · ');
+    const scope = scopeText();
     box.textContent = '';
     box.append(h('div', {}, h('h2', { text: 'Spend by type' }), h('div', { class: 'sub', text: scope })));
     if (!rows.length) { box.append(h('div', { class: 'none', text: 'Nothing to show yet.' })); return; }
@@ -310,7 +477,7 @@
   function paintCarbon() {
     const box = $('#carbon'); if (!box || !window.Carbon) return;
     const C = window.Carbon, s = C.summarise(all().filter(inView));
-    const scope = [S.f.month === 'all' ? 'All months' : (all().find((c) => c.month === S.f.month) || {}).monthLabel, S.f.staff === 'all' ? null : S.f.staff, S.f.status === 'all' ? null : STATUS[S.f.status]].filter(Boolean).join(' · ');
+    const scope = scopeText();
     box.textContent = '';
     const title = h('h2', {}); title.innerHTML = LEAF; title.append('Carbon from business travel');
     box.append(h('div', {}, title, h('div', { class: 'sub', text: scope })));
@@ -448,12 +615,15 @@
   function paintLeave() { paintLeaveFilters(); paintLeaveTiles(); paintLeaveTable(); paintAway(); }
 
   /* ---------- one claim, in the side panel ---------- */
-  function openDrawer(id) {
-    S.open = id; S.lastFocus = document.activeElement;
+  function openDrawer(id, line) {
+    if (!S.open) S.lastFocus = document.activeElement;
+    S.open = id;
     $('#scrim').hidden = false; $('#drawer').hidden = false; document.body.style.overflow = 'hidden';
     paintDrawer(false);
     $('#drawer').scrollTop = 0;
-    const x = $('#drawer .x'); if (x) x.focus();
+    const x = $('#drawer .x'); if (x) x.focus({ preventScroll: true });
+    const ln = line && $(`#drawer .ln[data-line="${Number(line)}"]`);         // from the auditor: show that line
+    if (ln) { ln.scrollIntoView({ block: 'center' }); ln.classList.add('pulse'); setTimeout(() => ln.classList.remove('pulse'), 2200); }
   }
 
   function closeDrawer() {
@@ -468,7 +638,7 @@
     const isLeave = c.kind === 'leave';
     const keys = isLeave ? LEAVE_STATUS_KEYS : STATUS_KEYS;
     const top = d.scrollTop;
-    S.drawerSig = sigOf(c);
+    S.drawerSig = drawerSigOf(c);
     if (S.draft.id !== c.id) S.draft = { id: c.id, text: null };
     const noteBox = h('textarea', { rows: '3', placeholder: 'Add a note for yourself or the claimant (optional)', maxlength: '600' });
     noteBox.value = S.draft.text != null ? S.draft.text : (c.note || '');      // what was typed but not saved yet stays
@@ -494,6 +664,13 @@
       (c.files || []).some((f) => f.kind === 'form-pdf') ? h('button', { class: 'primary', type: 'button', text: isLeave ? 'Open leave form' : 'Open claim form', onclick: () => viewFile(c, c.files.find((f) => f.kind === 'form-pdf')) }) : null,
       h('button', { class: 'ghost', type: 'button', id: 'btnAllFiles', text: 'Download everything (.zip)', onclick: (e) => downloadAll(c, e.currentTarget) })) : null;
 
+    const flags = isLeave ? [] : flagsFor(c.id);
+    const audSec = flags.length ? h('div', { class: 'sec audsec' }, h('h3', {}, 'Flow auditor', h('span', { class: 'cnt', text: `${flags.length} to look at` })),
+      flags.map((f) => h('div', { class: `aflag lvl-${f.level}` }, h('i', { class: 'ldot' }),
+        h('div', { style: 'min-width:0' }, h('b', { text: f.title }), h('div', { class: 'aud-why', text: f.reason }),
+          h('div', { class: 'aud-meta' }, h('span', { text: [LEVEL_WORD[f.level], f.wholeClaim ? 'whole claim' : `line ${f.line}`, f.rule ? `rule: ${f.rule}` : ''].filter(Boolean).join(' · ') }),
+            f.related.filter((r) => r.claimId !== c.id).map((r) => { const o = find(r.claimId); return o ? h('button', { class: 'link', type: 'button', text: `Open ${o.claimant}'s ${o.monthLabel} claim`, onclick: () => openDrawer(r.claimId, r.line) }) : null; })))))) : null;
+
     const statusSec = h('div', { class: 'sec' }, h('h3', { text: 'Status' }),
       h('div', { class: 'seg' + (isLeave ? ' three' : ''), role: 'group', 'aria-label': 'Status' }, keys.map((k) => h('button', { class: `s-${k}`, type: 'button', 'aria-pressed': c.status === k ? 'true' : 'false', onclick: () => changeStatus(c.id, k) }, h('span', { class: 'dot' }), STATUS[k]))),
       h('div', { class: 'note-row' }, noteBox, h('div', { class: 'acts' }, saveNote)));
@@ -511,9 +688,11 @@
       : h('div', { class: 'sec' }, h('h3', { text: 'Lines' }),
         c.lines.map((l) => {
           const rc = receiptsFor(l);
-          return h('div', { class: 'ln' }, icon(kindOf(l.category)),
+          const lf = flags.filter((f) => f.line === l.no && !f.wholeClaim);
+          return h('div', { class: 'ln' + (lf.length ? ` flagged lvl-${lf[0].level}` : ''), 'data-line': String(l.no) }, icon(kindOf(l.category)),
             h('div', { style: 'min-width:0' }, h('div', { class: 'nm', text: l.name || l.category }),
-              h('div', { class: 'dt', text: [l.category, niceDate(l.date), l.receiptNo ? 'No. ' + l.receiptNo : '', carbonText(l)].filter(Boolean).join(' · ') })),
+              h('div', { class: 'dt', text: [l.category, niceDate(l.date), l.receiptNo ? 'No. ' + l.receiptNo : '', carbonText(l)].filter(Boolean).join(' · ') }),
+              lf.length ? h('div', { class: 'lnflag', text: lf.map((f) => f.title).join(' · ') }) : null),
             h('div', {}, h('div', { class: 'am', text: money(l.amount) }),
               rc.length ? h('div', { class: 'vw' }, rc.map((f, i) => h('button', { class: 'link', type: 'button', text: f.kind === 'tollcheck' ? 'Toll list' : rc.length > 1 ? `Receipt ${i + 1}` : 'Receipt', onclick: () => viewFile(c, f) }))) : null));
         }),
@@ -530,7 +709,7 @@
     d.textContent = '';
     d.append(
       h('div', { class: 'dhead' }, head, h('button', { class: 'x', type: 'button', 'aria-label': 'Close', text: '×', onclick: closeDrawer })),
-      h('div', { class: 'dbody' }, big, quick, statusSec, middle, filesSec,
+      h('div', { class: 'dbody' }, big, quick, audSec, statusSec, middle, filesSec,
         h('div', { class: 'sec' }, h('h3', { text: 'Sent' }),
           h('dl', { class: 'kv' },
             h('dt', { text: 'From' }), h('dd', { text: c.from || '–' }),
@@ -655,6 +834,14 @@
     const list = all().filter(inView).sort((a, b) => a.month.localeCompare(b.month) || a.claimant.localeCompare(b.claimant));
     if (!list.length) { toast('Nothing to export for this view.', true); return; }
     let rows;
+    if (kind === 'audit') {
+      const a = auditNow(), ids = new Set(list.map((c) => c.id));
+      const flags = a.flags.filter((f) => ids.has(f.claimId));
+      const d1 = new Date();
+      saveAs(new Blob([csv(AUD.csvRows({ flags, lines: list.reduce((n, c) => n + c.lines.length, 0), claims: list.length, atRisk: atRiskOf(flags) }))], { type: 'text/csv;charset=utf-8' }),
+        `WFC audit report - ${d1.getFullYear()}-${pad(d1.getMonth() + 1)}-${pad(d1.getDate())}.csv`);
+      return;
+    }
     if (kind === 'carbon') {
       const d0 = new Date();
       saveAs(new Blob([csv(window.Carbon.csvRows(list))], { type: 'text/csv;charset=utf-8' }), `WFC carbon from business travel - ${d0.getFullYear()}-${pad(d0.getMonth() + 1)}-${pad(d0.getDate())}.csv`);
@@ -708,6 +895,10 @@
       render();
     }));
     $('#btnAsk').addEventListener('click', () => { if (window.AskUI) window.AskUI.open(); });
+    $('#rulesText').addEventListener('input', countRules);
+    $('#rulesExample').addEventListener('click', () => { const ta = $('#rulesText'); ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + AUD.EXAMPLE_RULES; countRules(); ta.focus(); });
+    $('#rulesCancel').addEventListener('click', () => $('#rulesDlg').close());
+    $('#rulesForm').addEventListener('submit', (e) => { e.preventDefault(); saveRules(); });
     $('#tabClaims').addEventListener('click', () => setView('claims'));
     $('#tabLeave').addEventListener('click', () => setView('leave'));
     window.addEventListener('hashchange', () => setView(location.hash === '#leave' ? 'leave' : 'claims', true));
@@ -744,6 +935,6 @@
     load();
   }
 
-  window.__dash = { S, load, render, showSample, openDrawer, closeDrawer, csv, setView };      // handy for testing
+  window.__dash = { S, load, render, showSample, openDrawer, closeDrawer, csv, setView, audit: auditNow };      // handy for testing
   init();
 })();

@@ -25,6 +25,17 @@ async function runProtocol(api, log) {
   assert.deepStrictEqual(must(await api.post({ action: 'list' }), 'a read by POST').claims, [], 'a read may also come by POST');
   assert.strictEqual(must(await api.get({ action: 'ping' }), 'ping').auth, false, 'no password set in this scenario');
 
+  // the company's claim rules: kept in the inbox, come back with the list, a change only by POST
+  assert.strictEqual(must(await api.get({ action: 'ping' }), 'ping').rules, true, 'ping says rules are understood');
+  assert.deepStrictEqual(must(await api.get({ action: 'list' }), 'list').rules.text, '', 'no rules yet');
+  mustFail(await api.get({ action: 'rules', text: 'x' }), 'rules by GET');
+  mustFail(await api.post({ action: 'rules', text: 'x'.repeat(4001) }), 'rules too long');
+  const saved = must(await api.post({ action: 'rules', text: '  Parking over RM30 needs a reason.\r\nNo fuel on leave days.\u0007 ' }), 'save rules').rules;
+  assert.strictEqual(saved.text, 'Parking over RM30 needs a reason.\nNo fuel on leave days.', 'line breaks kept, control characters and outer spaces gone');
+  assert.ok(saved.updatedAt);
+  assert.strictEqual(must(await api.get({ action: 'list' }), 'list').rules.text, saved.text, 'the rules come back with the list');
+  say('company rules are saved and listed');
+
   mustFail(await api.post({ action: 'submit', claim: claim({ claimant: '  ' }) }), 'no name');
   mustFail(await api.post({ action: 'submit', claim: claim({ month: 'October' }) }), 'bad month');
   mustFail(await api.post({ action: 'submit', claim: claim({ lines: [] }) }), 'no lines');
@@ -142,6 +153,7 @@ async function runAuth(api, password, log) {
   refused(await api.post({ action: 'file', id: sub.id, file: 'f1', key: 'wrong' }), 'file, wrong key');
   refused(await api.post({ action: 'status', id: sub.id, status: 'paid' }), 'status, no key');
   refused(await api.post({ action: 'delete', id: sub.id, key: 'wrong' }), 'delete, wrong key');
+  refused(await api.post({ action: 'rules', text: 'Anything goes.' }), 'rules, no key');
   say('reading and changing are refused without the password');
 
   // with the password everything works, by POST and by GET
@@ -151,6 +163,7 @@ async function runAuth(api, password, log) {
   assert.strictEqual(must(await api.get({ action: 'list', key: password }), 'list by GET with the key').claims.length, 1);
   assert.strictEqual(must(await api.post({ action: 'file', id: sub.id, file: 'f1', key: password }), 'file with the key').data, b64('%PDF-secret'));
   assert.strictEqual(must(await api.post({ action: 'status', id: sub.id, status: 'checked', key: password }), 'status with the key').claim.status, 'checked');
+  assert.strictEqual(must(await api.post({ action: 'rules', text: 'Receipts within 30 days.', key: password }), 'rules with the key').rules.text, 'Receipts within 30 days.');
   must(await api.post({ action: 'delete', id: sub.id, key: password }), 'delete with the key');
   assert.deepStrictEqual(must(await api.post({ action: 'list', key: password }), 'list after delete').claims, []);
   say('everything works with the password');

@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=13">
+<link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
 <header class="top">
@@ -35,6 +35,7 @@
         <div class="menu" id="exportMenu" hidden>
           <button type="button" data-export="claims" data-view="claims">Claims list <small>one row per claim</small></button>
           <button type="button" data-export="lines" data-view="claims">Every line <small>one row per receipt line</small></button>
+          <button type="button" data-export="audit" data-view="claims">Audit report <small>one row per flag, with the reason</small></button>
           <button type="button" data-export="carbon" data-view="claims">Carbon (business travel) <small>one row per fuel slip, kg CO₂e</small></button>
           <button type="button" data-export="leave" data-view="leave" hidden>Leave list <small>one row per application</small></button>
         </div>
@@ -74,6 +75,7 @@
         <div class="tfoot" id="tfoot"></div>
       </section>
       <div class="side">
+        <aside class="card audit" id="audit" aria-label="Flow auditor"></aside>
         <aside class="card spend" id="spend" aria-label="Spend by type"></aside>
         <aside class="card carbon" id="carbon" aria-label="Carbon from business travel"></aside>
       </div>
@@ -120,6 +122,17 @@
   <div class="vbody" id="vBody"></div>
 </dialog>
 
+<dialog id="rulesDlg" class="rulesdlg" aria-labelledby="rulesTitle">
+  <form id="rulesForm" method="dialog">
+    <h2 id="rulesTitle">Company claim rules</h2>
+    <p class="rl-lead">Write your claim rules in plain words, one per line. Flow reads every claim against them and flags any line that breaks one, with the reason.</p>
+    <textarea id="rulesText" rows="11" maxlength="4000" placeholder="For example: Parking over RM 30 in one go needs a reason." aria-label="Company claim rules"></textarea>
+    <div class="rl-under"><button class="link" type="button" id="rulesExample">Add example rules</button><span id="rulesCount"></span></div>
+    <p class="rl-note" id="rulesNote"></p>
+    <div class="rl-acts"><button class="ghost" type="button" id="rulesCancel">Cancel</button><button class="primary" type="submit" id="rulesSave">Save rules</button></div>
+  </form>
+</dialog>
+
 <div class="lock" id="lock" hidden>
   <div class="loginhero">
     <div class="lhtop"><img id="lockLogo" alt="WFC Systems"></div>
@@ -151,12 +164,13 @@
 <script defer src="vendor/jszip.min.js"></script>
 <script defer src="assets/logo.js"></script>
 <script defer src="js/config.js?v=2"></script>
-<script defer src="js/inbox.js?v=5"></script>
+<script defer src="js/inbox.js?v=6"></script>
 <script defer src="js/leave.js?v=1"></script>
 <script defer src="js/carbon.js?v=1"></script>
-<script defer src="js/askflow.js?v=4"></script>
-<script defer src="js/askui.js?v=3"></script>
-<script defer src="js/sample.js?v=2"></script>
-<script defer src="js/app.js?v=6"></script>
+<script defer src="js/audit.js?v=1"></script>
+<script defer src="js/askflow.js?v=5"></script>
+<script defer src="js/askui.js?v=4"></script>
+<script defer src="js/sample.js?v=3"></script>
+<script defer src="js/app.js?v=7"></script>
 </body>
 </html>

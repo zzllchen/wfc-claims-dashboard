@@ -97,6 +97,21 @@ const plan = (over) => Object.assign({ lang: 'en', table: 'lines', filters: { st
     const out = await A.ask('What is Alex paid?', { claims, leave, today: '2026-11-18', send });
     assert.strictEqual(n, 1); assert.strictEqual(out.answer.answer, 'The records do not hold salaries.');
   });
+  await ok('the auditor\'s flags: a table of its own, filtered by level, grouped by check, reasons go to the answer step', () => {
+    const Audit = require('../js/audit.js');
+    const dupe = claims.concat([{ claimant: 'Raj Kumar', month: '2026-10', monthLabel: 'October 2026', total: 60, status: 'new', updatedAt: '2026-11-04T02:00:00Z', id: 'r2', lines: [
+      { no: 1, category: 'Petrol', date: '2026-10-03', name: 'Kejayaan Teguh', receiptNo: 'a41c9e', amount: 60 }] }]).map((c, i) => Object.assign({ id: c.id || 'c' + i }, c));
+    const audit = Audit.run(dupe, leave);
+    const tf = A.tables(dupe, leave, audit.flags);
+    assert.ok(tf.flags.length >= 2);
+    const serious = A.run(plan({ table: 'flags', filters: { level: ['high'] }, chart: 'list' }), tf);
+    assert.deepStrictEqual(serious.rows.map((r) => [r.staff, r.level, r.check]).sort(), [['Alex Tan', 'high', 'Same receipt claimed twice'], ['Raj Kumar', 'high', 'Same receipt claimed twice']]);
+    assert.ok(/also on/.test(serious.rows[0].reason), 'the reason travels with the row');
+    assert.deepStrictEqual(serious.columns, ['staff', 'month', 'date', 'amount', 'level', 'check']);
+    const byCheck = A.run(plan({ table: 'flags', groupBy: 'level', measure: 'kgCO2', chart: 'bar' }), tf);
+    assert.strictEqual(byCheck.measure, 'count'); assert.strictEqual(byCheck.groups[0].label, 'High');
+    assert.ok(/auditor flags/.test(A.planRequest('Anything suspicious?', tf, '2026-11-19').messages[0].content));
+  });
   await ok('a refusal or unreadable reply is a plain error', () => {
     assert.throws(() => A.replyJson({ stop_reason: 'refusal', content: [] }), /did not answer/);
     assert.throws(() => A.replyJson({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'nope' }] }), /could not read/);

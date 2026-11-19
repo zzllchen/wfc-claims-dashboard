@@ -11,7 +11,8 @@
    No login yet (on purpose, for the demo): anyone who has the web app address can read and add claims.
    The setup steps are in README.md, "Put it online (Google)". */
 
-var VERSION = 3;
+var VERSION = 4;
+var MAX_RULES = 4000;                                 // the company's claim rules, in plain words (the dashboard's auditor checks claims against them)
 var MAX_LINES = 60;                                   // the claim form has 35 rows
 var MAX_FILE = 8 * 1024 * 1024;                      // bytes per file (Apps Script copes with about this much per request)
 // a claim goes New > Checked > Paid; a leave application goes New > Recorded (the office filled in the balance). Either can be "Has a question".
@@ -45,7 +46,7 @@ function route_(method, query, body) {
     var params = method === 'POST' ? (body || {}) : query;
     var action = params.action;
     var reads = { ping: 1, list: 1, file: 1 };                 // a read may come by GET or POST; a change only by POST
-    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_ };
+    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_, rules: rules_ };
     if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action])) throw fail_('Unknown action.');
     needKey_(action, params);
     // changes to a claim's record are one at a time; uploads of different files can run side by side
@@ -217,7 +218,20 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_() }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_(), rules: true }; }
+
+/* ---------- the company's claim rules: plain words the dashboard's auditor checks every claim against (password needed to read or change) ---------- */
+function readRules_() {
+  try { var r = JSON.parse(PropertiesService.getScriptProperties().getProperty('RULES') || '{}'); return { text: String(r.text || ''), updatedAt: String(r.updatedAt || '') }; }
+  catch (e) { return { text: '', updatedAt: '' }; }
+}
+function rules_(b) {
+  var text = String(b.text == null ? '' : b.text).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f]+/g, ' ').replace(/^\s+|\s+$/g, '');
+  if (text.length > MAX_RULES) throw fail_('Keep the rules under ' + MAX_RULES + ' characters.');
+  var r = { text: text, updatedAt: new Date().toISOString() };
+  PropertiesService.getScriptProperties().setProperty('RULES', JSON.stringify(r));
+  return { ok: true, rules: r };
+}
 
 /* ---------- Claude relay: the Claim Builder asks here to read a receipt photo, so nobody pastes a key ----------
    The Anthropic key lives only in the script properties (CLAUDE_KEY), never in a web page. Whatever the page asks for, the model is fixed here,
@@ -341,7 +355,7 @@ function readSheet_(sheet) {
 /* leave applications come in their own list, so a dashboard that only knows claims keeps working */
 function list_() {
   var db = open_();
-  return { ok: true, claims: readSheet_(db.sheet), leave: readSheet_(leaveSheet_(db, false)) };
+  return { ok: true, claims: readSheet_(db.sheet), leave: readSheet_(leaveSheet_(db, false)), rules: readRules_() };
 }
 
 function file_(q) {

@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
   const KEY = 'wfc-dash-api', PW = 'wfc-dash-key';
-  let base = '', needsKey = false, leaveOk = false, askOk = false;
+  let base = '', needsKey = false, leaveOk = false, askOk = false, rulesOk = false;
 
   const withQuery = (api, params) => api + (api.includes('?') ? '&' : '?') + new URLSearchParams(params);
   const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
@@ -44,7 +44,7 @@
       .map((x) => String(x || '').trim()).filter((x, i, a) => x && a.indexOf(x) === i);
     for (const api of list) {
       base = api;
-      try { const j = await get({ action: 'ping' }, 20000); needsKey = !!j.auth; leaveOk = !!j.leave; askOk = !!j.ask; return api; } catch (e) { /* try the next */ }
+      try { const j = await get({ action: 'ping' }, 20000); needsKey = !!j.auth; leaveOk = !!j.leave; askOk = !!j.ask; rulesOk = !!j.rules; return api; } catch (e) { /* try the next */ }
     }
     base = '';
     return '';
@@ -57,14 +57,17 @@
     get needsKey() { return needsKey; },
     get leaveOk() { return leaveOk; },       // false for an older inbox that only knows claims
     get askOk() { return askOk; },           // Ask Flow: the Google inbox with the company Claude key
+    get rulesOk() { return rulesOk; },       // the inbox keeps the company's claim rules (an older one does not)
     hasKey: () => !!lsGet(PW),
     setKey(pw) { lsSet(PW, String(pw || '')); },
     clearKey() { lsSet(PW, ''); },
-    /* { claims, leave }: leave applications come in their own list (an older inbox has none) */
-    async list() { const r = await read({ action: 'list' }); return { claims: r.claims || [], leave: r.leave || [] }; },
+    /* { claims, leave, rules }: leave applications come in their own list (an older inbox has none); rules = the company's claim rules, or null */
+    async list() { const r = await read({ action: 'list' }); return { claims: r.claims || [], leave: r.leave || [], rules: r.rules || null }; },
     async file(id, file) { return read({ action: 'file', id, file }); },
     /* Ask Flow: one request to Claude through the inbox (password needed; the model and limits are set there) -> Claude's reply */
     async ask(request) { return (await post({ action: 'ask', key: lsGet(PW), request }, 90000)).reply; },
+    /* the company's claim rules, in plain words (password needed) -> { text, updatedAt } */
+    async saveRules(text) { return (await post({ action: 'rules', text, key: lsGet(PW) })).rules; },
     async setStatus(id, status, note) { return (await post({ action: 'status', id, status, note, key: lsGet(PW) })).claim; },
   };
 })(window);

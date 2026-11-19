@@ -16,8 +16,8 @@
   const monthLabel = (m) => (/^\d{4}-\d{2}$/.test(m) ? `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}` : m);
   const dayNo = (iso) => Math.round(Date.parse(iso + 'T00:00:00Z') / 864e5);
 
-  /* ---------- the records, as three plain tables ---------- */
-  function tables(claims, leave) {
+  /* ---------- the records, as plain tables (flags: the auditor's findings, js/audit.js) ---------- */
+  function tables(claims, leave, flags) {
     const C = root.Carbon;
     const lines = [], cl = [], lv = [];
     (claims || []).forEach((c) => {
@@ -29,7 +29,9 @@
       });
     });
     (leave || []).forEach((v) => lv.push({ staff: v.claimant, type: LEAVE_TYPES.includes(v.type) ? v.type : 'other', start: v.start, end: v.end || v.start, days: Number(v.days) || 0, status: v.status, reason: v.reason || '' }));
-    return { lines, claims: cl, leave: lv };
+    const fl = (flags || []).map((f) => ({ staff: f.staff, month: f.month, date: f.date || '', category: f.category || '', shop: f.shop || '', amount: f.wholeClaim ? 0 : Number(f.amount) || 0,
+      level: f.level, check: f.title, reason: f.reason, rule: f.rule || '' }));
+    return { lines, claims: cl, leave: lv, flags: fl };
   }
 
   /* what the data holds, so Claude can use the real names and months (no amounts: those stay on this page until the answer step) */
@@ -45,7 +47,8 @@
       'Claim statuses: new, checked, paid, question',
       `Leave types: ${LEAVE_TYPES.join(', ')}; leave statuses: new, recorded, question`,
       leaveDates.length ? `Leave dates run from ${leaveDates[0]} to ${leaveDates[leaveDates.length - 1]}` : 'No leave applications yet',
-      `Rows: ${t.lines.length} claim lines, ${t.claims.length} claims, ${t.leave.length} leave applications`,
+      `Rows: ${t.lines.length} claim lines, ${t.claims.length} claims, ${t.leave.length} leave applications, ${(t.flags || []).length} auditor flags`,
+      `Auditor checks: ${uniq((t.flags || []).map((f) => f.check)).join('; ') || 'nothing flagged'}`,
     ].join('\n');
   }
 
@@ -56,13 +59,13 @@
     required: ['lang', 'table', 'filters', 'groupBy', 'measure', 'sort', 'limit', 'chart', 'title', 'unanswerable'],
     properties: {
       lang: { type: 'string', enum: ['en', 'ms', 'zh'] },
-      table: { type: 'string', enum: ['lines', 'claims', 'leave', 'none'] },
+      table: { type: 'string', enum: ['lines', 'claims', 'leave', 'flags', 'none'] },
       filters: {
         type: 'object', additionalProperties: false,
-        required: ['staff', 'month', 'category', 'status', 'leaveType', 'dateFrom', 'dateTo', 'missingReceiptNo', 'text'],
-        properties: { staff: strArr, month: strArr, category: strArr, status: strArr, leaveType: strArr, dateFrom: { type: 'string' }, dateTo: { type: 'string' }, missingReceiptNo: { type: 'boolean' }, text: { type: 'string' } },
+        required: ['staff', 'month', 'category', 'status', 'leaveType', 'level', 'dateFrom', 'dateTo', 'missingReceiptNo', 'text'],
+        properties: { staff: strArr, month: strArr, category: strArr, status: strArr, leaveType: strArr, level: strArr, dateFrom: { type: 'string' }, dateTo: { type: 'string' }, missingReceiptNo: { type: 'boolean' }, text: { type: 'string' } },
       },
-      groupBy: { type: 'string', enum: ['none', 'staff', 'month', 'category', 'leaveType', 'status', 'date', 'shop'] },
+      groupBy: { type: 'string', enum: ['none', 'staff', 'month', 'category', 'leaveType', 'status', 'date', 'shop', 'level', 'check'] },
       measure: { type: 'string', enum: ['amount', 'count', 'kgCO2', 'litres', 'days'] },
       sort: { type: 'string', enum: ['desc', 'asc', 'time'] },
       limit: { type: 'integer' },
@@ -77,11 +80,12 @@ The records are three tables:
 - lines: one row per receipt line of a monthly expense claim. Fields: staff, month (YYYY-MM, the claim month), date (YYYY-MM-DD, the receipt date), category, shop, receiptNo, amount (RM), litres (fuel lines only), kgCO2 (carbon of the fuel, fuel lines only), status (of its claim).
 - claims: one row per monthly claim. Fields: staff, month, total (RM), lines (count), status (new, checked, paid, question), sent (date).
 - leave: one row per leave application. Fields: staff, type (annual, sick, personal, unpaid, other; "MC" means sick), start, end (YYYY-MM-DD), days (working days), status (new, recorded, question), reason.
+- flags: one row per thing the dashboard's auditor flagged on a claim line (for "anything suspicious?", "claims to check", "duplicates", "fraud", "rule breaks"). Fields: staff, month (claim month), date, category, shop, amount (RM of that line), level (high, medium, low), check (what was found, as listed below), reason.
 
 Plan fields:
 - lang: the language the question is written in: en, ms (Malay), zh (Chinese).
 - table: the table that answers it; "none" when these records cannot answer it (then say why in unanswerable, in that language, one short sentence).
-- filters: leave a list empty or a string "" when it does not apply. Use the staff names, months and categories exactly as listed below (match loosely: "Ali" -> the listed full name). month filters claims and claim lines by claim month. dateFrom/dateTo (YYYY-MM-DD) filter lines by receipt date and leave by any overlap with the period. missingReceiptNo picks lines with no receipt number. text searches shop names and leave reasons.
+- filters: leave a list empty or a string "" when it does not apply. Use the staff names, months and categories exactly as listed below (match loosely: "Ali" -> the listed full name). month filters claims and claim lines by claim month. dateFrom/dateTo (YYYY-MM-DD) filter lines by receipt date and leave by any overlap with the period. missingReceiptNo picks lines with no receipt number. text searches shop names, leave reasons and flag reasons. level filters flags (high, medium, low; "serious" means high and medium).
 - groupBy: how to split the result ("none" for one figure or a list of rows). measure: what to add up: amount (RM), count, kgCO2, litres, days.
 - sort: desc or asc by the measure, or time (oldest first). limit: how many groups or rows to show (1-50; 10 is usual; 5 for "top five").
 - chart: number (one figure), bar (ranking people, shops or categories), column (months or dates, a trend or a comparison over time), pie (shares of a total, at most 6 parts), list (individual rows: "which claims", "who is on leave").
@@ -117,6 +121,13 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
       if (isoOk(f.dateFrom)) rows = rows.filter((r) => r.end >= f.dateFrom);
       if (isoOk(f.dateTo)) rows = rows.filter((r) => r.start <= f.dateTo);
       if (f.text) rows = rows.filter((r) => lc(r.reason).includes(lc(f.text)));
+    } else if (table === 'flags') {
+      if (f.month && f.month.length) rows = rows.filter((r) => f.month.includes(r.month));
+      if (f.level && f.level.length) rows = rows.filter((r) => f.level.map(lc).includes(r.level));
+      if (f.category && f.category.length) rows = rows.filter((r) => catMatch(r.category, f.category));
+      if (isoOk(f.dateFrom)) rows = rows.filter((r) => r.date >= f.dateFrom);
+      if (isoOk(f.dateTo)) rows = rows.filter((r) => r.date && r.date <= f.dateTo);
+      if (f.text) rows = rows.filter((r) => [r.shop, r.reason, r.check].some((x) => lc(x).includes(lc(f.text))));
     } else {
       if (f.month && f.month.length) rows = rows.filter((r) => f.month.includes(r.month));
       if (table === 'lines') {
@@ -137,13 +148,15 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
     return Number(r[measure]) || 0;
   }
   const keyOf = (r, g) => (g === 'leaveType' ? r.type : g === 'date' ? (r.date || r.start || '') : r[g]);
-  const labelOf = (k, g) => (g === 'month' ? monthLabel(k) : g === 'leaveType' ? (LEAVE_LABEL[k] || k) : g === 'status' ? ({ new: 'New', checked: 'Checked', paid: 'Paid', question: 'Has a question', recorded: 'Recorded' }[k] || k) : String(k || '–'));
+  const LEVEL_LABEL = { high: 'High', medium: 'Medium', low: 'Low' };
+  const labelOf = (k, g) => (g === 'month' ? monthLabel(k) : g === 'leaveType' ? (LEAVE_LABEL[k] || k) : g === 'level' ? (LEVEL_LABEL[k] || k) : g === 'status' ? ({ new: 'New', checked: 'Checked', paid: 'Paid', question: 'Has a question', recorded: 'Recorded' }[k] || k) : String(k || '–'));
 
   /* plan -> { measure, unit, total, count, groups: [{ key, label, value }], rows, columns, change } */
   function run(plan, t) {
     if (!plan || plan.table === 'none' || !t[plan.table]) return { empty: true, total: 0, count: 0, groups: [], rows: [] };
     const table = plan.table;
-    const measure = table === 'leave' && !['count', 'days'].includes(plan.measure) ? 'days' : table !== 'lines' && ['kgCO2', 'litres'].includes(plan.measure) ? 'amount' : plan.measure || 'count';
+    const measure = table === 'leave' && !['count', 'days'].includes(plan.measure) ? 'days' : table === 'flags' && !['count', 'amount'].includes(plan.measure) ? 'count'
+      : table !== 'lines' && ['kgCO2', 'litres'].includes(plan.measure) ? 'amount' : plan.measure || 'count';
     let rows = pick(plan, t);
     if (measure === 'kgCO2' || measure === 'litres') rows = rows.filter((r) => r.kgCO2 || r.litres);   // carbon and litres come from fuel slips only
     const limit = Math.max(1, Math.min(50, parseInt(plan.limit, 10) || 10));
@@ -155,14 +168,16 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
       out.estimatedSlips = fuel.filter((r) => r.estimated).length;
     }
     let g = plan.groupBy || 'none';
+    if ((g === 'level' || g === 'check') && table !== 'flags') g = 'none';
     if (g === 'leaveType' && table !== 'leave') g = table === 'lines' ? 'category' : 'none';
-    if (g === 'category' && table !== 'lines') g = 'none';
-    if (g === 'shop' && table !== 'lines') g = 'none';
+    if (g === 'category' && table !== 'lines' && table !== 'flags') g = 'none';
+    if (g === 'shop' && table !== 'lines' && table !== 'flags') g = 'none';
     if (g !== 'none') {
       const m = new Map();
       rows.forEach((r) => { const k = keyOf(r, g); m.set(k, r2((m.get(k) || 0) + valueOf(r, measure, table))); });
       let groups = Array.from(m, ([key, value]) => ({ key, label: labelOf(key, g), value }));
-      if (g === 'month' || g === 'date' || plan.sort === 'time') groups.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+      if (g === 'level') groups.sort((a, b) => ['high', 'medium', 'low'].indexOf(a.key) - ['high', 'medium', 'low'].indexOf(b.key));
+      else if (g === 'month' || g === 'date' || plan.sort === 'time') groups.sort((a, b) => String(a.key).localeCompare(String(b.key)));
       else groups.sort((a, b) => (plan.sort === 'asc' ? a.value - b.value : b.value - a.value));
       out.groupedBy = g;
       out.groupCount = groups.length;
@@ -176,9 +191,11 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
     const sorted = rows.slice().sort(plan.sort === 'time' || plan.chart === 'list'
       ? (a, b) => String(a.date || a.start || a.month).localeCompare(String(b.date || b.start || b.month))
       : (a, b) => (plan.sort === 'asc' ? 1 : -1) * (valueOf(a, measure, table) - valueOf(b, measure, table)));
-    out.columns = table === 'leave' ? ['staff', 'type', 'start', 'end', 'days', 'status'] : table === 'claims' ? ['staff', 'month', 'total', 'lines', 'status'] : ['staff', 'date', 'category', 'shop', 'receiptNo', 'amount'].concat(measure === 'kgCO2' || measure === 'litres' ? ['litres', 'kgCO2'] : []);
+    out.columns = table === 'leave' ? ['staff', 'type', 'start', 'end', 'days', 'status'] : table === 'claims' ? ['staff', 'month', 'total', 'lines', 'status'] : table === 'flags' ? ['staff', 'month', 'date', 'amount', 'level', 'check'] : ['staff', 'date', 'category', 'shop', 'receiptNo', 'amount'].concat(measure === 'kgCO2' || measure === 'litres' ? ['litres', 'kgCO2'] : []);
     out.rows = sorted.slice(0, plan.chart === 'list' ? limit : Math.min(limit, 25)).map((r) => {
-      const o = {}; out.columns.forEach((c) => { o[c] = c === 'type' ? LEAVE_LABEL[r.type] : c === 'month' ? monthLabel(r.month) : r[c]; }); return o;
+      const o = {}; out.columns.forEach((c) => { o[c] = c === 'type' ? LEAVE_LABEL[r.type] : c === 'month' ? monthLabel(r.month) : r[c]; });
+      if (table === 'flags') { o.reason = r.reason; if (r.rule) o.rule = r.rule; }          // the answer step explains each flag; the table shows the short check name
+      return o;
     });
     return out;
   }
@@ -191,7 +208,7 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
       highlights: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'value'], properties: { label: { type: 'string' }, value: { type: 'string' } } } },
     },
   };
-  const ROW_KIND = { lines: 'receipt lines', claims: 'monthly claims', leave: 'leave applications' };
+  const ROW_KIND = { lines: 'receipt lines', claims: 'monthly claims', leave: 'leave applications', flags: 'auditor flags (things to check on claim lines)' };
   const ANSWER_SYSTEM = `You answer a manager's question about their company's expense claims and leave, for a dashboard that shows your answer above a chart.
 Use only the figures in the result you are given. Copy figures exactly as written there (RM amounts with two decimals and thousands commas, such as RM 1,575.40). Never add, average or recalculate anything yourself; a "change" in the result is already worked out and may be quoted.
 - answer: 1 to 3 short sentences in the requested language, plain words for a busy boss, the key figure first. No markdown, no bullet points. If the result is empty, say plainly that nothing matches. rowsAre says what was counted: receipt lines are receipts (resit, 收据), not claims; a claim is one person's monthly form. If estimatedFromAmount is given, add a few words in the answer that those slips' litres were worked out from the amount paid, so the figure is an estimate (not as a highlight).
@@ -227,8 +244,8 @@ Use only the figures in the result you are given. Copy figures exactly as writte
   }
 
   /* the whole question: ask(question) -> { plan, result, answer: { answer, speech, highlights } }. send(request) posts to the inbox. */
-  async function ask(question, { claims, leave, today, send }) {
-    const t = tables(claims, leave);
+  async function ask(question, { claims, leave, flags, today, send }) {
+    const t = tables(claims, leave, flags);
     const plan = replyJson(await send(planRequest(question, t, today)));
     if (plan.table === 'none') return { plan, result: run(plan, t), answer: { answer: plan.unanswerable || 'These records cannot answer that question.', speech: plan.unanswerable || '', highlights: [] } };
     const result = run(plan, t);

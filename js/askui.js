@@ -24,7 +24,7 @@
   const PLACEHOLDER = 'Type a question…';
   const SUGGEST = [
     'Fuel spend by person this month', 'Who is on leave next week?', 'Carbon this month vs last month',
-    'Claims with no receipt number', 'Berapa jumlah tuntutan bulan lepas?', '上个月谁的油费最高？',
+    'Anything suspicious in the claims?', 'Berapa jumlah tuntutan bulan lepas?', '上个月谁的油费最高？',
   ];
   const ls = { get: (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } } };
   const pad = (n) => String(n).padStart(2, '0');
@@ -42,10 +42,10 @@
     if (unit === 'days') return `${v} ${v === 1 ? 'day' : 'days'}`;
     return (Number(v) || 0).toLocaleString('en-US');
   }
-  const COL = { staff: 'Staff', date: 'Date', category: 'Type', shop: 'Shop', receiptNo: 'Receipt no.', amount: 'Amount', litres: 'Litres', kgCO2: 'kg CO₂e', type: 'Leave', start: 'From', end: 'To', days: 'Days', status: 'Status', month: 'Month', total: 'Total', lines: 'Lines' };
+  const COL = { staff: 'Staff', date: 'Date', category: 'Type', shop: 'Shop', receiptNo: 'Receipt no.', amount: 'Amount', litres: 'Litres', kgCO2: 'kg CO₂e', type: 'Leave', start: 'From', end: 'To', days: 'Days', status: 'Status', month: 'Month', total: 'Total', lines: 'Lines', level: 'Level', check: 'Found' };
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const STATUS = { new: 'New', checked: 'Checked', paid: 'Paid', question: 'Has a question', recorded: 'Recorded' };
-  const cell = (c, v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${+v.slice(8)} ${MON[+v.slice(5, 7) - 1]} ${v.slice(0, 4)}` : c === 'status' ? (STATUS[v] || v || '–') : c === 'amount' || c === 'total' ? money(v) : c === 'kgCO2' ? (Math.round(v * 10) / 10).toLocaleString('en-US') : c === 'litres' ? (v ? (Math.round(v * 10) / 10) + ' L' : '–') : v == null || v === '' ? '–' : String(v));
+  const cell = (c, v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${+v.slice(8)} ${MON[+v.slice(5, 7) - 1]} ${v.slice(0, 4)}` : c === 'status' ? (STATUS[v] || v || '–') : c === 'level' ? ({ high: 'High', medium: 'Medium', low: 'Low' }[v] || v) : c === 'amount' || c === 'total' ? money(v) : c === 'kgCO2' ? (Math.round(v * 10) / 10).toLocaleString('en-US') : c === 'litres' ? (v ? (Math.round(v * 10) / 10) + ' L' : '–') : v == null || v === '' ? '–' : String(v));
 
   /* ---------- charts ---------- */
   const PALETTE = ['#1f4ad8', '#0f9fa0', '#3d8bff', '#16a34a', '#7c3aed', '#b45309'];
@@ -216,6 +216,7 @@
       let calls = 0;
       const out = await A.ask(q, {
         claims: S.sample ? S.sampleList : S.real, leave: S.sample ? S.sampleLeave : S.realLeave, today: today(),
+        flags: (window.__dash.audit && window.__dash.audit() || { flags: [] }).flags,
         send: async (req) => { calls++; if (calls === 2) card.querySelector('.af-step').textContent = 'Writing the answer…'; return Inbox.ask(req); },
       });
       paintAnswer(card, q, out, spoken);
@@ -234,14 +235,14 @@
     const n = result.count, e = result.estimatedSlips, f = result.fuelSlips, sample = S().sample;
     const some = e && e !== f;
     if (plan.lang === 'ms') {
-      const what = { leave: 'permohonan cuti', claims: 'tuntutan' }[plan.table] || 'resit';
+      const what = { leave: 'permohonan cuti', claims: 'tuntutan', flags: 'tanda audit' }[plan.table] || 'resit';
       return `Daripada ${n} ${what} dalam rekod anda${sample ? ' (data contoh)' : ''}.` + (e ? ` Liter ${some ? `bagi ${e} daripada ${f} slip` : 'slip minyak'} dikira daripada jumlah bayaran.` : '');
     }
     if (plan.lang === 'zh') {
-      const what = { leave: '份请假申请', claims: '份申领' }[plan.table] || '张收据';
+      const what = { leave: '份请假申请', claims: '份申领', flags: '条审计标记' }[plan.table] || '张收据';
       return `根据记录中的 ${n} ${what}${sample ? '（示例数据）' : ''}。` + (e ? `${some ? `其中 ${e} 张油单` : '油单'}的升数按付款金额估算。` : '');
     }
-    const what = { leave: 'leave application', claims: 'claim' }[plan.table] || 'receipt';
+    const what = { leave: 'leave application', claims: 'claim', flags: 'auditor flag' }[plan.table] || 'receipt';
     return `From ${n} ${what}${n === 1 ? '' : 's'} in your records${sample ? ' (sample data)' : ''}.` + (e ? ` Litres on ${some ? `${e} of ${f} fuel slips` : f === 1 ? 'the fuel slip' : `all ${f} fuel slips`} worked out from the amount paid.` : '');
   }
 

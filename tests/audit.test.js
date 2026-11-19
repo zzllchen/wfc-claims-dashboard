@@ -56,7 +56,7 @@ ok('same shop, date and amount with another number is medium; not also "two fill
 ok('fuel on a sick-leave day, with the leave matched by name loosely', () => {
   const f = flagsOf('2026-10_alex', 2)[0];
   assert.strictEqual(f.check, 'on-leave'); assert.strictEqual(f.level, 'medium');
-  assert.strictEqual(f.reason, 'Fuel on Mon 19 Oct, when Alex Tan was on sick leave (MC) (Mon 19 Oct to Tue 20 Oct).');
+  assert.strictEqual(f.reason, 'Fuel on Mon 19 Oct, when Alex Tan was on sick leave (MC) from Mon 19 Oct to Tue 20 Oct.');
 });
 ok('fuel at RM 1.14 a litre does not add up', () => {
   const f = flagsOf('2026-10_alex', 5)[0];

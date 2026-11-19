@@ -110,9 +110,20 @@ function makeApi(dataDir, opts) {
   const now = () => new Date().toISOString();
   const password = String((opts && opts.password) || '');         // empty = open, as in the demo
   const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude'];             // what the Claim Builder does: never needs the password
+  const MAX_RULES = 4000;
+  const readRules = () => { try { const r = JSON.parse(fs.readFileSync(path.join(dataDir, 'rules.json'), 'utf8')); return { text: String(r.text || ''), updatedAt: String(r.updatedAt || '') }; } catch (e) { return { text: '', updatedAt: '' }; } };
 
   const actions = {
-    ping() { return { ok: true, service: 'wfc-claims', version: 3, where: 'local', auth: !!password, claude: false, leave: true, ask: false }; },
+    ping() { return { ok: true, service: 'wfc-claims', version: 4, where: 'local', auth: !!password, claude: false, leave: true, ask: false, rules: true }; },
+
+    // the company's claim rules, in plain words: the dashboard's auditor checks every claim against them (kept beside the claims, not in a claim folder)
+    rules(b) {
+      const text = String(b.text == null ? '' : b.text).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f]+/g, ' ').trim();
+      if (text.length > MAX_RULES) throw fail(`Keep the rules under ${MAX_RULES} characters.`);
+      const r = { text, updatedAt: now() };
+      fs.writeFileSync(path.join(dataDir, 'rules.json'), JSON.stringify(r));
+      return { ok: true, rules: r };
+    },
 
     claude() { throw fail('Claude is not set up on the local inbox.', 503); },       // only the Google inbox has the relay
     ask() { throw fail('Ask Flow works with the Google inbox only.', 503); },          // the same: the company Claude key lives there (the password still applies first)
@@ -120,7 +131,7 @@ function makeApi(dataDir, opts) {
     list() {
       const all = db.all().map(publicClaim).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
       // leave applications come in their own list, so a dashboard that only knows claims keeps working
-      return { ok: true, claims: all.filter((c) => c.kind !== 'leave'), leave: all.filter((c) => c.kind === 'leave') };
+      return { ok: true, claims: all.filter((c) => c.kind !== 'leave'), leave: all.filter((c) => c.kind === 'leave'), rules: readRules() };
     },
 
     file(q) {

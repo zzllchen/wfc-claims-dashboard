@@ -131,8 +131,8 @@
       if (!['fuel', 'parking', 'meals', 'stay'].includes(x.k) || !isIso(x.l.date)) return;
       const v = away.find((a) => sameName(a.claimant, x.c.claimant) && x.l.date >= a.start && x.l.date <= (a.end || a.start));
       if (!v) return;
-      const span = v.start === (v.end || v.start) ? niceDay(v.start) : `${niceDay(v.start)} to ${niceDay(v.end)}`;
-      add(x, 'on-leave', 'medium', `${KIND_WORD[x.k][0].toUpperCase() + KIND_WORD[x.k].slice(1)} on ${niceDay(x.l.date)}, when ${x.c.claimant} was on ${LEAVE_WORD[v.type] || 'leave'} (${span}).`);
+      const span = v.start === (v.end || v.start) ? 'that day' : `from ${niceDay(v.start)} to ${niceDay(v.end)}`;
+      add(x, 'on-leave', 'medium', `${KIND_WORD[x.k][0].toUpperCase() + KIND_WORD[x.k].slice(1)} on ${niceDay(x.l.date)}, when ${x.c.claimant} was on ${LEAVE_WORD[v.type] || 'leave'} ${span}.`);
     });
 
     // 5. fuel figures read from the slip that cannot be right: the price a litre, or more than a car's tank
@@ -147,7 +147,7 @@
     // 6. a receipt dated outside the claim month: after the claim was sent, after the month, or long before it
     all.forEach((x) => {
       if (!isIso(x.l.date) || !/^\d{4}-\d{2}$/.test(x.c.month || '') || x.k === 'toll') return;
-      const sent = String(x.c.submittedAt || x.c.updatedAt || '').slice(0, 10);
+      const sent = String(x.c.updatedAt || x.c.submittedAt || '').slice(0, 10);       // the latest version: a re-sent claim may add later receipts
       const gap = monthIndex(x.c.month) - monthIndex(x.l.date.slice(0, 7));
       if (isIso(sent) && x.l.date > sent) add(x, 'date-window', 'medium', `Dated ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, after the claim was sent on ${niceDay(sent)}.`);
       else if (gap < 0) add(x, 'date-window', 'low', `Dated ${shortMonth(x.l.date.slice(0, 7))}, after the ${shortMonth(x.c.month)} claim month. It may belong in next month's claim.`);
@@ -241,7 +241,7 @@ Work out any sums yourself carefully from the lines given. Return {"findings": [
     const mine = (leave || []).filter((v) => sameName(v.claimant, c.claimant) && isIso(v.start)).map((v) => `${LEAVE_WORD[v.type] || 'leave'}: ${niceDay(v.start)} ${v.start.slice(0, 4)}${v.end && v.end !== v.start ? ` to ${niceDay(v.end)} ${v.end.slice(0, 4)}` : ''}`);
     const content = [
       'Company claim rules:', String(rules || '').trim(), '',
-      `Claim: ${c.claimant}, ${c.monthLabel || shortMonth(c.month)}${c.submittedAt ? `, sent ${String(c.submittedAt).slice(0, 10)}` : ''}. Total ${money(c.total)}.`,
+      `Claim: ${c.claimant}, ${c.monthLabel || shortMonth(c.month)}${c.updatedAt ? `, sent ${String(c.updatedAt).slice(0, 10)}` : ''}. Total ${money(c.total)}.`,
       'Lines (number | type | date | shop or description | receipt no. | amount | litres):', ...lines, '',
       `Totals by type in this claim: ${Array.from(by).map(([k, v]) => `${k} ${money(v)}`).join('; ')}`,
       `Leave taken by ${c.claimant}: ${mine.length ? mine.join('; ') : 'none on record'}`,
