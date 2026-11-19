@@ -668,7 +668,7 @@ dialog.rulesdlg[open] { display: block; }
 
 /* ---------- at a glance: four summary cards over the claims list (each opens its details) ---------- */
 .ins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
-.icard { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: stretch; align-content: start; gap: 4px; min-width: 0; text-align: left; padding: 18px 20px; border: 1px solid #e3e9f4; border-radius: var(--r); background: #fff; color: var(--ink); font-weight: 400;
+.icard { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; text-align: left; padding: 18px 20px; border: 1px solid #e3e9f4; border-radius: var(--r); background: #fff; color: var(--ink); font-weight: 400;
   box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 12px 32px -20px rgba(15, 23, 42, .14); transition: border-color .15s, transform .15s, box-shadow .15s; }
 .icard:hover { border-color: #b9c6e6; transform: translateY(-1px); box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 16px 34px -20px rgba(15, 23, 42, .22); }
 .ich { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -774,3 +774,54 @@ dialog.rulesdlg[open] { display: block; }
 .spend .bar .fill { background: var(--kc, var(--blue)); }
 .spend .bar .track { background: var(--kb, var(--blue-50)); }
 @media (max-width: 640px) { .iclg { gap: 4px 10px; font-size: 12px; } }
+
+/* ---------- summary cards, one pattern: header, number, one bar, its colour key, a short line at the bottom ---------- */
+.icviz { display: grid; gap: 10px; margin-top: 6px; }
+.icviz .icbar, .icard > .icbar { margin: 0; height: 8px; border-radius: 4px; gap: 2px; }
+.icard > .icbar.none { margin-top: 6px; background: repeating-linear-gradient(90deg, #e6ebf5 0 6px, transparent 6px 10px); }
+.iclg .lg { min-width: 0; }
+.iclg .lgn { overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.iclg .lg i { width: 9px; height: 9px; border-radius: 3px; background: var(--kc, var(--lc)); flex: none; }
+.icbar i.lvl-high, .icbar i.lvl-medium, .icbar i.lvl-low { background: var(--lc); }
+.lvl-ok { --lc: #16a34a; --kc: #16a34a; }
+.icbar i.lvl-ok { background: #16a34a; }
+.lvl-low { --kc: #b8c2d6; }
+.icbar i.lvl-low { background: #b8c2d6; }
+.icard .ics { margin-top: auto; padding-top: 12px; }                 /* the bottom line sits at the bottom, level across the row */
+.icard .ics.warn { color: var(--warn); font-weight: 600; }
+.icard.alert .ics.warn { color: var(--bad); }
+.ic-audit.ok .icv b::before { content: "✓ "; font-size: .8em; }
+.icard.empty .icv b { color: var(--faint); }
+.icard .icv { margin-top: 12px; }
+@media (max-width: 560px) {                                         /* phones: one card a row, so each colour key fits on one line */
+  .ins { grid-template-columns: 1fr; gap: 12px; }
+  .icard { padding: 16px 16px 14px; }
+  .icv { display: flex; gap: 6px; margin-top: 10px; }
+  .icv b { font-size: 24px; }
+  .icv small { font-size: 13px; }
+  .ich { align-items: center; }
+  .icl { white-space: nowrap; padding-top: 0; font-size: 13.5px; }
+  .ics { white-space: nowrap; display: block; -webkit-line-clamp: unset; font-size: 12.5px; }
+  .icard .ics { padding-top: 10px; }
+  .iclg { font-size: 12.5px; gap: 4px 12px; }
+}
+/* the colour key: two even columns in every card */
+.icviz .iclg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 14px; }
+.icviz .iclg .lg { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.icviz .iclg .lgn { flex: 0 1 auto; min-width: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icviz .iclg .lg b { flex: none; }
+/* phones: each summary card is a compact row: icon, name and number on one line, then the bar, its key and the bottom line */
+@media (max-width: 560px) {
+  .icard { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; grid-template-areas: "ic lab val" "viz viz viz" "foot foot foot"; column-gap: 12px; row-gap: 12px; align-items: center; padding: 14px 16px; }
+  .icard .ich { display: contents; }
+  .icard .ici { grid-area: ic; }
+  .icard .icl { grid-area: lab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0; font-size: 14px; color: var(--ink); }
+  .icard .icgo { display: none; }
+  .icard .icv { grid-area: val; margin: 0; display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; min-width: 0; }
+  .icard .icv b { font-size: 21px; }
+  .icard .icv small { font-size: 12.5px; }
+  .icard .icviz, .icard > .icbar { grid-area: viz; margin: 0; }
+  .icard .ics { grid-area: foot; margin: 0; padding: 0; }
+}
+.icl .ls { display: none; }
+@media (max-width: 560px) { .icl .lf:not(:only-child) { display: none; } .icl .ls { display: inline; } }

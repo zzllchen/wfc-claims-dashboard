@@ -432,54 +432,79 @@
   /* ---------- at a glance: four summary cards over the claims list; each opens its full details in the side panel ---------- */
   const BARS = svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>');
   const GLANCE_ICON = { audit: () => SHIELD, spend: () => BARS, subs: () => LAYERS, carbon: () => LEAF };
+  const SHORT_LABEL = { subs: 'AI & software' };          // on phones, where the full name does not fit beside the number
   function paintGlance() {
     const box = $('#ins'); if (!box) return;
     const inv = all().filter(inView), ids = new Set(inv.map((c) => c.id));
     const nLines = inv.reduce((n, c) => n + c.lines.length, 0);
-    const card = (key, cls, label, value, unit, sub, extra) => {
-      const ic = h('span', { class: 'ici' }); ic.innerHTML = GLANCE_ICON[key]();
-      return h('button', { class: `icard ic-${key} ${cls || ''}`, type: 'button', 'aria-label': `${label}: ${value}${unit ? ' ' + unit : ''}. Open the details.`, onclick: () => openInsight(key) },
-        h('span', { class: 'ich' }, ic, h('span', { class: 'icl', text: label }), h('span', { class: 'icgo', 'aria-hidden': 'true', text: '›' })),
+    // every card has the same parts: a header, the headline number, one bar, its colour key, and a short line at the bottom
+    const seg = (parts, total) => h('span', { class: 'icbar' }, parts.map((p) => { const i = h('i', { class: p.cls || '', title: p.title || '' }); if (p.color) i.style.background = p.color; i.style.width = (p.v / (total || 1) * 100).toFixed(2) + '%'; return i; }));
+    const key = (parts) => h('span', { class: 'iclg' }, parts.map((p) => { const d = h('i', { class: p.cls || '' }); if (p.color) d.style.background = p.color; return h('span', { class: `lg ${p.cls || ''}`, title: p.title || '' }, d, h('span', { class: 'lgn', text: p.name }), p.val ? h('b', { text: p.val }) : null); }));
+    const card = (k, cls, label, value, unit, viz, foot, footCls) => {
+      const ic = h('span', { class: 'ici' }); ic.innerHTML = GLANCE_ICON[k]();
+      return h('button', { class: `icard ic-${k} ${cls || ''}`, type: 'button', 'aria-label': `${label}: ${value}${unit ? ' ' + unit : ''}. Open the details.`, onclick: () => openInsight(k) },
+        h('span', { class: 'ich' }, ic, h('span', { class: 'icl' }, h('span', { class: 'lf', text: label }), SHORT_LABEL[k] ? h('span', { class: 'ls', text: SHORT_LABEL[k] }) : null), h('span', { class: 'icgo', 'aria-hidden': 'true', text: '›' })),
         h('span', { class: 'icv' }, h('b', { text: value }), unit ? h('small', { text: unit }) : null),
-        extra || null,
-        sub ? h('span', { class: 'ics', text: sub }) : null);
+        viz || h('span', { class: 'icbar none' }),
+        foot ? h('span', { class: `ics ${footCls || ''}`, text: foot }) : null);
     };
+    // the biggest two in their own colours, the rest together as "N more" (three items: the key fits the card without cutting names)
+    const topParts = (rows, name, val, colors) => {
+      const parts = (rows.length <= 3 ? rows : rows.slice(0, 2)).map((r, i) => ({ name: name(r), v: r.v, val: val(r.v), color: colors[i] }));
+      if (rows.length > 3) { const rest = rows.slice(2), v = rest.reduce((t, r) => t + r.v, 0); parts.push({ name: `${rest.length} more`, v, val: val(v), cls: 'k-rest', title: rest.map((r) => `${name(r)} ${val(r.v)}`).join(', ') }); }
+      return parts;
+    };
+    const pct = (v, sum) => { const n = v / (sum || 1) * 100; return n > 0 && n < 1 ? '<1%' : `${Math.round(n)}%`; };
     box.textContent = '';
-    // the auditor
+
+    // 1. the auditor: how many to check, by level
     const a = auditNow(), flags = a ? a.flags.filter((f) => ids.has(f.claimId)) : [];
-    const serious = flags.filter((f) => f.level !== 'low'), lows = flags.length - serious.length;
-    const ruleNote = S.pol.busy ? `Checking against your rules: ${S.pol.done} of ${S.pol.total}` : '';
-    if (serious.length) {
-      const counts = { high: 0, medium: 0 };
-      serious.forEach((f) => { counts[f.level]++; });
-      box.append(card('audit', 'alert', 'Flow auditor', String(serious.length), 'to check', ruleNote || `${money(atRiskOf(flags))} on these lines`,
-        h('span', { class: 'iclv' }, ['high', 'medium'].filter((l) => counts[l]).map((l) => h('span', { class: `lvl lvl-${l}` }, h('i'), `${LEVEL_WORD[l]} ${counts[l]}`)))));
+    const lv = { high: 0, medium: 0, low: 0 };
+    flags.forEach((f) => { lv[f.level]++; });
+    const serious = lv.high + lv.medium, rules = rulesText();
+    const ruleLine = S.pol.busy ? `Checking against your rules (${S.pol.done} of ${S.pol.total})` : rules ? 'Also checked against your company rules' : 'Every line checked';
+    if (!nLines) box.append(card('audit', 'empty', 'Flow auditor', '–', '', null, 'No claims in this view'));
+    else if (serious) {
+      const parts = ['high', 'medium', 'low'].filter((l) => lv[l]).map((l) => ({ name: LEVEL_WORD[l], v: lv[l], val: String(lv[l]), cls: `lvl-${l}` }));
+      box.append(card('audit', 'alert', 'Flow auditor', String(serious), 'to check', h('span', { class: 'icviz' }, seg(parts, flags.length), key(parts)), `${money(atRiskOf(flags))} on these lines`, 'warn'));
     } else {
-      box.append(card('audit', 'ok', 'Flow auditor', nLines ? 'All clear' : '–', '', ruleNote || (!nLines ? 'No claims in this view' : lows ? `${lows} small point${lows > 1 ? 's' : ''} to glance at` : `${nLines} lines checked`)));
+      const parts = [{ name: 'Checked', v: nLines - lv.low, val: String(nLines), cls: 'lvl-ok', title: `${nLines} lines checked` }].concat(lv.low ? [{ name: 'Notes', v: lv.low, val: String(lv.low), cls: 'lvl-low', title: `${lv.low} small note${lv.low > 1 ? 's' : ''} to glance at` }] : []);
+      box.append(card('audit', 'ok', 'Flow auditor', 'All clear', '', h('span', { class: 'icviz' }, seg(parts, nLines), key(parts)), ruleLine));
     }
-    // spend by type, as one bar
+
+    // 2. spend by type
     const by = new Map();
     inv.forEach((c) => c.lines.forEach((l) => { const k = kindOf(l.category); by.set(k, (by.get(k) || 0) + (Number(l.amount) || 0)); }));
-    const rows = Array.from(by).sort((x, y) => y[1] - x[1]), sum = rows.reduce((t, r) => t + r[1], 0);
-    // the bar and its colour key show the same parts: the three biggest types in their own colours, the rest together in grey
-    const parts = (rows.length <= 4 ? rows : rows.slice(0, 3)).map(([k, v]) => ({ cls: `k-${k}`, name: KIND_LABEL[k], v }));
-    if (rows.length > 4) { const rest = rows.slice(3); parts.push({ cls: 'k-rest', name: `${rest.length} more`, v: rest.reduce((t, r) => t + r[1], 0), title: rest.map(([k, v]) => `${KIND_LABEL[k]} ${money(v)}`).join(', ') }); }
-    const pct = (v) => { const n = v / (sum || 1) * 100; return n > 0 && n < 1 ? '<1%' : `${Math.round(n)}%`; };
-    const spendKey = rows.length ? h('span', { class: 'icspend' },
-      h('span', { class: 'icbar' }, parts.map((p) => { const i = h('i', { class: p.cls, title: p.title || `${p.name} ${money(p.v)}` }); i.style.width = (p.v / (sum || 1) * 100).toFixed(2) + '%'; return i; })),
-      h('span', { class: 'iclg' }, parts.map((p) => h('span', { class: `lg ${p.cls}`, title: p.title || money(p.v) }, h('i'), p.name, h('b', { text: pct(p.v) }))))) : null;
-    box.append(card('spend', '', 'Spend', money(sum), '', rows.length ? '' : 'Nothing claimed in this view', spendKey));
-    // software & AI tools
+    const rows = Array.from(by, ([k, v]) => ({ k, v })).sort((x, y) => y.v - x.v), sum = rows.reduce((t, r) => t + r.v, 0);
+    if (rows.length) {
+      const parts = (rows.length <= 4 ? rows : rows.slice(0, 3)).map((r) => ({ name: KIND_LABEL[r.k], v: r.v, val: pct(r.v, sum), cls: `k-${r.k}`, title: money(r.v) }));
+      if (rows.length > 4) { const rest = rows.slice(3), v = rest.reduce((t, r) => t + r.v, 0); parts.push({ name: `${rest.length} more`, v, val: pct(v, sum), cls: 'k-rest', title: rest.map((r) => `${KIND_LABEL[r.k]} ${money(r.v)}`).join(', ') }); }
+      box.append(card('spend', '', 'Spend', money(sum), '', h('span', { class: 'icviz' }, seg(parts, sum), key(parts)), `${nLines} line${nLines === 1 ? '' : 's'} on ${inv.length} claim${inv.length === 1 ? '' : 's'}`));
+    } else box.append(card('spend', 'empty', 'Spend', 'RM 0.00', '', null, 'Nothing claimed in this view'));
+
+    // 3. software & AI tools: each tool, a month at its latest price
     const sr = window.Subs ? window.Subs.find(subsScope()) : null;
-    if (sr && sr.tools.length) {
+    const tools = sr ? sr.tools.filter((t) => !t.personal) : [];
+    if (tools.length) {
       const t = sr.totals, notes = sr.insights.length;
-      box.append(card('subs', notes ? 'note' : '', 'Software & AI tools', money(t.monthly || t.claimed), t.monthly ? 'a month' : 'claimed',
-        [`${t.tools} tool${t.tools === 1 ? '' : 's'}`, notes ? `${notes} thing${notes === 1 ? '' : 's'} to look at` : t.monthly ? `about ${money(t.yearly)} a year` : ''].filter(Boolean).join(' · ')));
-    } else box.append(card('subs', 'empty', 'Software & AI tools', 'None yet', '', 'No subscriptions in these claims'));
-    // carbon
+      const trows = tools.map((x) => ({ name: x.name, v: x.monthly || x.last })).sort((p, q) => q.v - p.v);
+      const tsum = trows.reduce((s2, r) => s2 + r.v, 0);
+      const parts = topParts(trows, (r) => r.name, (v) => `RM ${Math.round(v).toLocaleString('en-US')}`, ['#7c3aed', '#a78bfa', '#c4b5fd', '#ddd6fe']);
+      parts.forEach((p) => { if (!p.title) p.title = `${p.name} ${money(p.v)} a month`; });
+      box.append(card('subs', '', 'Software & AI tools', money(t.monthly || t.claimed), t.monthly ? 'a month' : 'claimed', h('span', { class: 'icviz' }, seg(parts, tsum), key(parts)),
+        notes ? `${notes} thing${notes === 1 ? '' : 's'} to look at` : t.monthly ? `About ${money(t.yearly)} a year` : `${t.tools} tool${t.tools === 1 ? '' : 's'}, paid once`, notes ? 'warn' : ''));
+    } else box.append(card('subs', 'empty', 'Software & AI tools', 'None yet', '', null, 'No subscriptions in these claims'));
+
+    // 4. carbon: who drove the most
     const C = window.Carbon, cs = C ? C.summarise(inv) : null;
-    if (cs && cs.slips) { const [num, unit] = C.weight(cs.kg).split(' '); box.append(card('carbon', '', 'Carbon', num, `${unit} CO₂e`, `${cs.slips} fuel slip${cs.slips > 1 ? 's' : ''} · business travel`)); }
-    else box.append(card('carbon', 'empty', 'Carbon', '–', '', 'No fuel claims in this view'));
+    if (cs && cs.slips) {
+      const [num, unit] = C.weight(cs.kg).split(' ');
+      const prows = cs.byStaff.map((p) => ({ name: p.name, v: p.kg }));
+      const short = (n) => { const w = String(n).trim().split(/\s+/)[0] || ''; return w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : n; };      // first names on the card; the full name on hover and in the details
+      const parts = topParts(prows, (r) => short(r.name), (v) => C.weight(v), ['#15803d', '#4ade80', '#86efac', '#bbf7d0']);
+      parts.forEach((p, i) => { if (!p.title && prows[i]) p.title = prows[i].name; });
+      box.append(card('carbon', '', 'Carbon', num, `${unit} CO₂e`, h('span', { class: 'icviz' }, seg(parts, cs.kg), key(parts)), `${cs.slips} fuel slip${cs.slips > 1 ? 's' : ''} · Scope 3 business travel`));
+    } else box.append(card('carbon', 'empty', 'Carbon', '–', '', null, 'No fuel claims in this view'));
   }
 
   /* the side panel with the full details: the auditor, spend, software & AI tools, carbon (tabs at the top) */
