@@ -126,7 +126,7 @@
     for (const c of todo) {
       if (rulesText() !== rules) break;                     // the rules changed meanwhile: start again with the new ones
       try {
-        const found = AUD.policyFindings(await Inbox.ask(AUD.policyRequest(c, leaveAll(), rules)), c);
+        const found = AUD.policyFindings(await Inbox.ask(AUD.policyRequest(c, leaveAll(), rules, all())), c);
         const st = store.get(POLICY_STORE);
         st[AUD.policyKey(c, rules)] = { at: Date.now(), f: found };
         const keys = Object.keys(st);

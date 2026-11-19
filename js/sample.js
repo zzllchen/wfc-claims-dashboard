@@ -13,7 +13,7 @@
 
   // [staff, months back, status, hours ago sent, lines: [category, day, shop, receipt no, amount, litres (optional)]]
   // A few are wrong on purpose, so the auditor has something to show: Lim's 5cc50b is Alex's receipt again, Alex's 7d02f1 is RM 60 for 52.5 litres,
-  // and Siti bought petrol on the 19th, her MC day (see the leave below).
+  // and Lim's meal on the 15th was on his MC day (see the leave below).
   const SPEC = [
     ['Alex Tan', 1, 'new', 3, [['Petrol', 3, 'Kejayaan Teguh Enterprise', 'a41c9e', 60], ['Petrol', 11, 'Kejayaan Teguh Enterprise', '5cc50b', 55.64], ['Petrol', 22, 'Petronas Seksyen 13', '7d02f1', 60, 52.5],
       ['Toll', 28, "Touch 'n Go", '1130739887', 27.4], ['Parking', 28, 'MBSJ Flexi Parking', '', 84.8], ['AI tools', 14, 'Eleven Labs', 'INV4417', 46.7]]],
@@ -68,13 +68,13 @@
 
   function buildLeave() {
     const now = Date.now();
-    // Siti's MC on the 19th of last month: the day of one of her sample petrol receipts
+    // Lim's MC on the 15th of last month: the day of his sample meal receipt
     const lm = new Date(); lm.setDate(1); lm.setMonth(lm.getMonth() - 1);
-    const mcDay = `${lm.getFullYear()}-${pad(lm.getMonth() + 1)}-19`, mcAt = new Date(now - 24 * 25 * 3600e3).toISOString();
-    const siti = { id: `leave-${mcDay}_siti-aminah`, kind: 'leave', sample: true, claimant: 'Siti Aminah', type: 'sick', typeLabel: 'Sick leave', start: mcDay, end: mcDay, days: 1, reason: 'Food poisoning',
+    const mcDay = `${lm.getFullYear()}-${pad(lm.getMonth() + 1)}-15`, mcAt = new Date(now - 24 * 25 * 3600e3).toISOString();
+    const lim = { id: `leave-${mcDay}_lim-wei-jie`, kind: 'leave', sample: true, claimant: 'Lim Wei Jie', type: 'sick', typeLabel: 'Sick leave', start: mcDay, end: mcDay, days: 1, reason: 'Fever',
       signedOn: mcDay, month: mcDay.slice(0, 7), monthLabel: `${MONTHS[lm.getMonth()]} ${lm.getFullYear()}`, from: '', to: 'agnes@yutech.com.my', subject: 'Leave application', version: 1,
       submittedAt: mcAt, updatedAt: mcAt, status: 'recorded', statusAt: mcAt, history: [{ at: mcAt, text: 'Received' }], files: [{ id: 'f3', name: 'MC 1.jpg', kind: 'mc', mime: 'image/jpeg', size: 88000 }], note: 'Balance updated.' };
-    return [siti].concat(LEAVE_SPEC.map(([claimant, type, off, len, status, hours, reason, mc]) => {
+    return [lim].concat(LEAVE_SPEC.map(([claimant, type, off, len, status, hours, reason, mc]) => {
       const a = addDays(off), b = addDays(off + len - 1);
       const start = isoOf(a), end = isoOf(b), month = start.slice(0, 7);
       const at = new Date(now - hours * 3600e3).toISOString();

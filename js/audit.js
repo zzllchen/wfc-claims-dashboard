@@ -124,14 +124,15 @@
       });
     });
 
-    // 4. fuel, parking, meals or a hotel on a day the person was on leave (statement totals have no real date; medical on sick leave is normal)
+    // 4. parking, meals or a hotel on a day the person was on leave: worth a glance (WFC allows fuel all month, leave days too; statement totals have no real date;
+    //    medical on sick leave is normal)
     const away = (leave || []).filter((v) => isIso(v.start));
     all.forEach((x) => {
-      if (!['fuel', 'parking', 'meals', 'stay'].includes(x.k) || !isIso(x.l.date) || summaryLine(x, cards)) return;
+      if (!['parking', 'meals', 'stay'].includes(x.k) || !isIso(x.l.date) || summaryLine(x, cards)) return;
       const v = away.find((a) => sameName(a.claimant, x.c.claimant) && x.l.date >= a.start && x.l.date <= (a.end || a.start));
       if (!v) return;
       const span = v.start === (v.end || v.start) ? 'that day' : `from ${niceDay(v.start)} to ${niceDay(v.end)}`;
-      add(x, 'on-leave', 'medium', `${KIND_WORD[x.k][0].toUpperCase() + KIND_WORD[x.k].slice(1)} on ${niceDay(x.l.date)}, when ${x.c.claimant} was on ${LEAVE_WORD[v.type] || 'leave'} ${span}.`);
+      add(x, 'on-leave', 'low', `${KIND_WORD[x.k][0].toUpperCase() + KIND_WORD[x.k].slice(1)} on ${niceDay(x.l.date)}, when ${x.c.claimant} was on ${LEAVE_WORD[v.type] || 'leave'} ${span}.`);
     });
 
     // 5. fuel figures read from the slip that cannot be right: the price a litre, or more than a car's tank
@@ -143,15 +144,14 @@
       else if (litres > 75) add(x, 'fuel-math', 'medium', `${litres.toFixed(1)} litres in one fill is more than most car tanks hold (about 40 to 70 litres).`);
     });
 
-    // 6. a receipt dated outside the claim month: after the claim was sent, after the month, or long before it
+    // 6. a receipt dated outside the claim month: at WFC a receipt goes in the claim for the month it was paid
     all.forEach((x) => {
       if (!isIso(x.l.date) || !/^\d{4}-\d{2}$/.test(x.c.month || '') || summaryLine(x, cards)) return;
       const sent = String(x.c.updatedAt || x.c.submittedAt || '').slice(0, 10);       // the latest version: a re-sent claim may add later receipts
       const gap = monthIndex(x.c.month) - monthIndex(x.l.date.slice(0, 7));
       if (isIso(sent) && x.l.date > sent) add(x, 'date-window', 'medium', `Dated ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, after the claim was sent on ${niceDay(sent)}.`);
-      else if (gap < 0) add(x, 'date-window', 'low', `Dated ${shortMonth(x.l.date.slice(0, 7))}, after the ${shortMonth(x.c.month)} claim month. It may belong in next month's claim.`);
-      else if (gap >= 3) add(x, 'date-window', 'medium', `Dated ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, ${gap} months before the ${shortMonth(x.c.month)} claim month.`);
-      else if (gap >= 1) add(x, 'date-window', 'low', `Dated ${shortMonth(x.l.date.slice(0, 7))}, in a ${shortMonth(x.c.month)} claim.`);
+      else if (gap !== 0) add(x, 'date-window', 'medium', `Paid ${niceDay(x.l.date)} ${x.l.date.slice(0, 4)}, but put in the ${shortMonth(x.c.month)} claim. A receipt goes in the claim for the month it was paid`
+        + (gap < 0 ? ', so this one belongs in a later claim.' : gap >= 3 ? `, and this one is ${gap} months older.` : '.'));
     });
 
     // 7. two fuel fills by one person on one day (not already flagged as the same purchase)
@@ -226,17 +226,22 @@ Work out any sums yourself carefully from the lines given. Return {"findings": [
   /* the key a stored answer is kept under: it changes when the claim, the rules or these instructions change */
   const policyKey = (c, rules) => `${c.id}|${c.version || 1}|${c.updatedAt || ''}|${hash(rules + POLICY_SYSTEM)}`;
 
-  function policyRequest(c, leave, rules) {
+  function policyRequest(c, leave, rules, claims) {
     const lines = (c.lines || []).map((l) => [`${l.no}.`, l.category || 'Other', isIso(l.date) ? `${niceDay(l.date)} ${l.date.slice(0, 4)}` : 'no date', l.name || '-', l.receiptNo ? `receipt no. ${l.receiptNo}` : 'no receipt no.', money(l.amount),
       Number(l.litres) > 0 ? `${Number(l.litres).toFixed(2)} litres` : ''].filter(Boolean).join(' | '));
     const by = new Map();
     (c.lines || []).forEach((l) => by.set(l.category || 'Other', r2((by.get(l.category || 'Other') || 0) + (Number(l.amount) || 0))));
+    // what this person has claimed so far this year (every claim of the year, this one included), for yearly limits
+    const year = String(c.month || '').slice(0, 4), ytd = new Map();
+    (claims || [c]).filter((o) => sameName(o.claimant, c.claimant) && String(o.month || '').slice(0, 4) === year)
+      .forEach((o) => (o.lines || []).forEach((l) => ytd.set(l.category || 'Other', r2((ytd.get(l.category || 'Other') || 0) + (Number(l.amount) || 0)))));
     const mine = (leave || []).filter((v) => sameName(v.claimant, c.claimant) && isIso(v.start)).map((v) => `${LEAVE_WORD[v.type] || 'leave'}: ${niceDay(v.start)} ${v.start.slice(0, 4)}${v.end && v.end !== v.start ? ` to ${niceDay(v.end)} ${v.end.slice(0, 4)}` : ''}`);
     const content = [
       'Company claim rules:', String(rules || '').trim(), '',
       `Claim: ${c.claimant}, ${c.monthLabel || shortMonth(c.month)}${c.updatedAt ? `, sent ${String(c.updatedAt).slice(0, 10)}` : ''}. Total ${money(c.total)}.`,
       'Lines (number | type | date | shop or description | receipt no. | amount | litres):', ...lines, '',
       `Totals by type in this claim: ${Array.from(by).map(([k, v]) => `${k} ${money(v)}`).join('; ')}`,
+      `Totals by type so far in ${year} for ${c.claimant} (all their claims this year, this one included): ${Array.from(ytd).map(([k, v]) => `${k} ${money(v)}`).join('; ')}`,
       `Leave taken by ${c.claimant}: ${mine.length ? mine.join('; ') : 'none on record'}`,
     ].join('\n');
     return { system: POLICY_SYSTEM, max_tokens: 1500, output_config: { effort: 'low', format: { type: 'json_schema', schema: POLICY_SCHEMA } }, messages: [{ role: 'user', content }] };
