@@ -64,17 +64,18 @@
     stationery: svg('<path d="M4 20l1-5L16 4a2.1 2.1 0 0 1 3 3L8 18z"/><path d="M14 6l3 3"/>'),
     other: svg('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>'),
     file: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
+    device: svg('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>'),
     annual: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
     unpaid: svg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M16 14.5h2"/>'),
     personal: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/>'),
     leaveother: svg('<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>'),
   };
   ICON.sick = ICON.medical;
-  const KIND_LABEL = { fuel: 'Petrol', toll: 'Toll', parking: 'Parking', medical: 'Medical', ai: 'AI tools', stay: 'Accommodation', meals: 'Meals', stationery: 'Stationery', other: 'Other' };
+  const KIND_LABEL = { fuel: 'Petrol', toll: 'Toll', parking: 'Parking', medical: 'Medical', ai: 'AI tools', device: 'Devices', stay: 'Accommodation', meals: 'Meals', stationery: 'Stationery', other: 'Other' };
   const kindOf = (cat) => {
     const c = String(cat || '');
     return /petrol|fuel/i.test(c) ? 'fuel' : /toll/i.test(c) ? 'toll' : /parking/i.test(c) ? 'parking'
-      : /medical|klinik|clinic|pharmac|farmasi/i.test(c) ? 'medical' : /\bai\b|software|subscription|saas/i.test(c) ? 'ai'
+      : /medical|klinik|clinic|pharmac|farmasi/i.test(c) ? 'medical' : /device|hardware|laptop|gadget|phone\b|tablet\b/i.test(c) ? 'device' : /\bai\b|software|subscription|saas/i.test(c) ? 'ai'
         : /accommodation|hotel/i.test(c) ? 'stay' : /meal|food|lunch|dinner|makan/i.test(c) ? 'meals' : /stationer|office suppl/i.test(c) ? 'stationery' : 'other';
   };
   function icon(kind, cls) { const e = h('span', { class: `ico ${cls || ''} k-${kind}` }); e.innerHTML = ICON[kind]; return e; }

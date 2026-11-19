@@ -35,10 +35,10 @@
   const kindOf = (cat) => {
     const c = String(cat || '');
     return /petrol|fuel|diesel|minyak/i.test(c) ? 'fuel' : /toll/i.test(c) ? 'toll' : /parking/i.test(c) ? 'parking'
-      : /medical|klinik|clinic|pharmac|farmasi/i.test(c) ? 'medical' : /\bai\b|software|subscription|saas/i.test(c) ? 'ai'
+      : /medical|klinik|clinic|pharmac|farmasi/i.test(c) ? 'medical' : /device|hardware|laptop|gadget|phone\b|tablet\b/i.test(c) ? 'device' : /\bai\b|software|subscription|saas/i.test(c) ? 'ai'
         : /accommodation|hotel/i.test(c) ? 'stay' : /meal|food|lunch|dinner|makan/i.test(c) ? 'meals' : /stationer|office suppl/i.test(c) ? 'stationery' : 'other';
   };
-  const KIND_WORD = { fuel: 'fuel', toll: 'toll', parking: 'parking', medical: 'medical', ai: 'AI tools', stay: 'accommodation', meals: 'meals', stationery: 'stationery', other: 'other' };
+  const KIND_WORD = { fuel: 'fuel', toll: 'toll', parking: 'parking', medical: 'medical', ai: 'AI tools', device: 'device', stay: 'accommodation', meals: 'meals', stationery: 'stationery', other: 'other' };
   // toll and parking lines carry the Touch 'n Go card or statement number, which is the same every month: never a duplicate
   const statementLine = (k) => k === 'toll' || k === 'parking';
   const receiptKey = (no) => String(no || '').toLowerCase().replace(/[\s\-_.#/:]+/g, '');

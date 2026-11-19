@@ -182,6 +182,7 @@ tr.fresh td { animation: fresh 5s ease-out; }
 .k-parking { --kb: #e6e9fb; --kc: #4338ca; }
 .k-medical { --kb: #ffe9e7; --kc: #c2362a; }
 .k-ai { --kb: #f1e8ff; --kc: #7c3aed; }
+.k-device { --kb: #eef2f7; --kc: #475569; }
 .k-stay { --kb: #dcf5f1; --kc: #0f766e; }
 .k-meals { --kb: #fff7d6; --kc: #a16207; }
 .k-stationery { --kb: #e8f3e0; --kc: #3f7d20; }
