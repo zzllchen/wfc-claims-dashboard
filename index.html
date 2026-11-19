@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=17">
+<link rel="stylesheet" href="css/style.css?v=18">
 </head>
 <body>
 <header class="top">
@@ -55,6 +55,7 @@
       <label class="f"><span>Month</span><select id="fMonth"></select></label>
       <label class="f"><span>Staff</span><select id="fStaff"></select></label>
       <label class="f grow"><span>Search</span><input type="search" id="fSearch" placeholder="Name, shop, receipt no. ..." autocomplete="off"></label>
+      <button class="link fclear" type="button" id="fClear" hidden>Clear filters</button>
     </div>
 
     <!-- two columns: the claims with spend and software under them; the auditor with carbon under it. Each column keeps its own height. -->
@@ -96,6 +97,7 @@
       <label class="f"><span>Month</span><select id="lMonth"></select></label>
       <label class="f"><span>Staff</span><select id="lStaff"></select></label>
       <label class="f grow"><span>Search</span><input type="search" id="lSearch" placeholder="Name, type, reason ..." autocomplete="off"></label>
+      <button class="link fclear" type="button" id="lClear" hidden>Clear filters</button>
     </div>
 
     <div class="layout">
@@ -179,6 +181,6 @@
 <script defer src="js/askflow.js?v=5"></script>
 <script defer src="js/askui.js?v=4"></script>
 <script defer src="js/sample.js?v=5"></script>
-<script defer src="js/app.js?v=10"></script>
+<script defer src="js/app.js?v=11"></script>
 </body>
 </html>

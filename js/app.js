@@ -275,6 +275,7 @@
     document.querySelectorAll('#exportMenu [data-view]').forEach((b) => { b.hidden = b.dataset.view !== next; });
     if (!keepUrl) { try { history.replaceState(null, '', next === 'leave' ? '#leave' : location.pathname + location.search); } catch (e) { /* not allowed here */ } }
     render();
+    stickyCheck(true);
   }
 
   function paintTop() {
@@ -314,6 +315,7 @@
     if (S.f.staff !== 'all' && !staff.includes(S.f.staff)) S.f.staff = 'all';
     setOptions($('#fMonth'), [['all', 'All months']].concat(months), S.f.month);
     setOptions($('#fStaff'), [['all', 'Everyone']].concat(staff.map((s) => [s, s])), S.f.staff);
+    $('#fClear').hidden = S.f.month === 'all' && S.f.staff === 'all' && S.f.status === 'all' && !S.f.q.trim();
   }
 
   function paintTiles() {
@@ -571,6 +573,7 @@
     if (S.lf.staff !== 'all' && !staff.includes(S.lf.staff)) S.lf.staff = 'all';
     setOptions($('#lMonth'), [['all', 'All months']].concat(months), S.lf.month);
     setOptions($('#lStaff'), [['all', 'Everyone']].concat(staff.map((s) => [s, s])), S.lf.staff);
+    $('#lClear').hidden = S.lf.month === 'all' && S.lf.staff === 'all' && S.lf.status === 'all' && !S.lf.q.trim();
   }
 
   function paintLeaveTiles() {
@@ -906,6 +909,28 @@
     saveAs(new Blob([csv(rows)], { type: 'text/csv;charset=utf-8' }), `WFC claims${kind === 'lines' ? ' - every line' : ''} - ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.csv`);
   }
 
+  /* ---------- the filters stay at hand: once the page scrolls past them they stick under the header, compact (no labels; on phones only
+     month and staff). The space they leave is kept with a bottom margin, so the page does not jump when they stick. ---------- */
+  let stickyBusy = false;
+  function stickyUpdate(reset) {
+    stickyBusy = false;
+    const top = $('.top'), hdr = top && getComputedStyle(top).position === 'sticky' ? top.getBoundingClientRect().height : 0;
+    document.documentElement.style.setProperty('--hdr', hdr + 'px');
+    document.querySelectorAll('.view > .toolbar').forEach((bar) => {
+      if (reset) { bar.classList.remove('stuck'); bar.style.marginBottom = ''; }
+      if (!bar.offsetParent) return;                                       // the other tab
+      const prev = bar.previousElementSibling, gap = parseFloat(getComputedStyle(bar.parentElement).rowGap) || 0;
+      const stuck = !!prev && prev.getBoundingClientRect().bottom + gap < hdr - 1;          // where the bar would be, without sticking
+      if (stuck === bar.classList.contains('stuck')) return;
+      if (stuck) { const h0 = bar.offsetHeight; bar.classList.add('stuck'); bar.style.marginBottom = (h0 - bar.offsetHeight) + 'px'; }
+      else { bar.classList.remove('stuck'); bar.style.marginBottom = ''; }
+    });
+  }
+  function stickyCheck(reset) {
+    if (reset) { stickyUpdate(true); return; }
+    if (!stickyBusy) { stickyBusy = true; requestAnimationFrame(() => stickyUpdate(false)); }
+  }
+
   /* ---------- small bits ---------- */
   let toastTimer = 0;
   function toast(text, bad) {
@@ -943,6 +968,10 @@
       render();
     }));
     $('#btnAsk').addEventListener('click', () => { if (window.AskUI) window.AskUI.open(); });
+    addEventListener('scroll', () => stickyCheck(), { passive: true });
+    addEventListener('resize', () => stickyCheck(true));
+    $('#fClear').addEventListener('click', () => { S.f = { month: 'all', staff: 'all', status: 'all', q: '' }; $('#fSearch').value = ''; render(); stickyCheck(true); });
+    $('#lClear').addEventListener('click', () => { S.lf = { month: 'all', staff: 'all', status: 'all', q: '' }; $('#lSearch').value = ''; render(); stickyCheck(true); });
     $('#rulesText').addEventListener('input', countRules);
     $('#rulesExample').addEventListener('click', () => { const ta = $('#rulesText'); ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + AUD.EXAMPLE_RULES; countRules(); ta.focus(); });
     $('#rulesCancel').addEventListener('click', () => $('#rulesDlg').close());
@@ -980,6 +1009,7 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden && S.connected && !S.sample) load(true); });
     setInterval(() => { if (!document.hidden && S.connected && !S.sample && !S.saving) load(true); }, 20000);
     render();
+    stickyCheck(true);
     load();
   }
 
