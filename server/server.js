@@ -71,6 +71,13 @@ function cleanClaim(c) {
     from: emailOf(c.from), to: emailOf(c.to), subject: str(c.subject, 160), scanLog: scanLogOf(c.scanLog) };
 }
 
+/* ---------- receipts claimed before (the same rules as the dashboard's auditor, js/audit.js) ---------- */
+const SEEN_OTHER_KIND = /transport|grab|e-?hailing|taxi|travel|flight|air\s?ticket|airfare|\btrains?\b|bus\s?ticket|ferry|online|shopping|shopee|lazada|supplier|purchase|petrol|fuel|diesel|minyak/i;
+const statementCat = (cat) => { const c = String(cat || ''); return !SEEN_OTHER_KIND.test(c) && /toll|parking/i.test(c); };
+const receiptKey = (no) => String(no || '').toLowerCase().replace(/[\s\-_.#/:]+/g, '');
+const shopKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const lookKey = (name, date, amount) => { const shop = shopKey(name), a = Number(amount) || 0; return shop && /^\d{4}-\d{2}-\d{2}$/.test(date || '') && a > 0 ? `${shop}|${date}|${a.toFixed(2)}` : ''; };
+
 /* ---------- leave applications ---------- */
 const isoOk = (v) => { const s = String(v || ''); return /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s ? s : ''; };
 const dayNo = (iso) => Math.round(Date.parse(iso + 'T00:00:00Z') / 864e5);
@@ -121,12 +128,12 @@ function makeApi(dataDir, opts) {
   const db = makeStore(dataDir);
   const now = () => new Date().toISOString();
   const password = String((opts && opts.password) || '');         // empty = open, as in the demo
-  const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude', 'scan'];             // what the Claim Builder does: never needs the password
+  const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude', 'scan', 'seen'];             // what the Claim Builder does: never needs the password
   const MAX_RULES = 4000;
   const readRules = () => { try { const r = JSON.parse(fs.readFileSync(path.join(dataDir, 'rules.json'), 'utf8')); return { text: String(r.text || ''), updatedAt: String(r.updatedAt || '') }; } catch (e) { return { text: '', updatedAt: '' }; } };
 
   const actions = {
-    ping() { return { ok: true, service: 'wfc-claims', version: 5, where: 'local', auth: !!password, claude: false, leave: true, ask: false, rules: true }; },
+    ping() { return { ok: true, service: 'wfc-claims', version: 6, where: 'local', auth: !!password, claude: false, leave: true, ask: false, rules: true, seen: true }; },
 
     // the company's claim rules, in plain words: the dashboard's auditor checks every claim against them (kept beside the claims, not in a claim folder)
     rules(b) {
@@ -145,6 +152,34 @@ function makeApi(dataDir, opts) {
       const all = db.all().map(publicClaim).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
       // leave applications come in their own list, so a dashboard that only knows claims keeps working
       return { ok: true, claims: all.filter((c) => c.kind !== 'leave'), leave: all.filter((c) => c.kind === 'leave'), rules: readRules() };
+    },
+
+    /* receipts claimed before (the Claim Builder asks while a claim is being made): the same receipt number, or the same shop, date and
+       amount, on a line of an earlier saved claim. Toll and parking lines are left out; the claim being re-saved is not compared with itself.
+       Open, so it says only the month, the status and "yours or not", never another person's name or lines. */
+    seen(b) {
+      const claimant = str(b.claimant, 80), month = String(b.month || ''), who = claimant ? slug(claimant) : '';
+      const self = who && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? `${month}_${who}` : '';
+      const byNo = new Map(), byLook = new Map(), push = (m, k, v) => { if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+      db.all().map(publicClaim).filter((c) => c && c.kind !== 'leave' && c.id !== self).forEach((c) => {
+        const hit = { month: c.month, monthLabel: c.monthLabel || monthLabel(c.month), status: c.status, mine: !!who && slug(c.claimant) === who };
+        (c.lines || []).forEach((l) => {
+          if (statementCat(l.category)) return;
+          const rn = receiptKey(l.receiptNo), lk = lookKey(l.name, l.date, l.amount);
+          if (rn.length >= 3) push(byNo, rn, hit);
+          if (lk) push(byLook, lk, hit);
+        });
+      });
+      const matches = [];
+      (Array.isArray(b.lines) ? b.lines.slice(0, MAX_LINES) : []).forEach((l, i) => {
+        l = l || {};
+        if (statementCat(l.category)) return;
+        const rn = receiptKey(str(l.receiptNo, 60));
+        let hits = rn.length >= 3 ? byNo.get(rn) : null, check = 'receipt';
+        if (!hits) { const lk = lookKey(str(l.name, 120), l.date, l.amount); hits = lk ? byLook.get(lk) : null; check = 'lookalike'; }
+        if (hits && hits.length) matches.push({ ref: str(l.ref, 40) || String(i), check, claims: hits.slice(0, 3) });
+      });
+      return { ok: true, matches };
     },
 
     file(q) {

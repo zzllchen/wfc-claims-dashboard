@@ -127,6 +127,25 @@ async function runProtocol(api, log) {
   must(await api.post({ action: 'finish', id: other.id, token: other.token }), 'finish other');
   assert.strictEqual((await api.get({ action: 'list' })).claims.length, 2);
 
+  // receipts claimed before: asked by the Claim Builder while a claim is made, no password, no names in the answer
+  assert.strictEqual(must(await api.get({ action: 'ping' }), 'ping').seen, true, 'ping says the lookup is there');
+  mustFail(await api.get({ action: 'seen', claimant: 'Chin Zhi Liang', month: '2026-11' }), 'seen by GET');
+  const ask = async (who, month, lines) => must(await api.post({ action: 'seen', claimant: who, month, lines }), 'seen').matches;
+  const nov = await ask('Chin Zhi Liang', '2026-11', [
+    { ref: 'a', category: 'Petrol', date: '2026-11-03', name: 'Some Station', receiptNo: 'A1-B2 C3', amount: 61 },      // the same receipt no., written another way
+    { ref: 'b', category: 'Toll', date: '2026-11-30', name: "Touch 'n Go", receiptNo: '1130739887', amount: 27.4 },     // the TNG card number: never a duplicate
+    { ref: 'c', category: 'Medical', date: '2026-10-12', name: 'KLINIK PUTRA CARE', receiptNo: 'zz99', amount: 75.1 },  // same shop, date and amount
+    { ref: 'd', category: 'Meals', date: '2026-11-04', name: 'New Cafe', receiptNo: '7788', amount: 12 },             // new
+  ]);
+  assert.deepStrictEqual(nov.map((m) => [m.ref, m.check]), [['a', 'receipt'], ['c', 'lookalike']]);
+  assert.deepStrictEqual(nov[0].claims.map((x) => [x.month, x.mine]).sort(), [['2026-09', false], ['2026-10', true]], 'claimed by this person in October and by someone else in September');
+  assert.deepStrictEqual(Object.keys(nov[0].claims[0]).sort(), ['mine', 'month', 'monthLabel', 'status']);
+  assert.ok(!JSON.stringify(nov).includes('Siti') && !JSON.stringify(nov).includes('Chin'), 'never another person\'s name');
+  const oct = await ask('Chin Zhi Liang', '2026-10', [{ ref: 'a', category: 'Petrol', date: '2026-10-05', name: 'Kejayaan Teguh Enterprise', receiptNo: 'a1b2c3', amount: 60 }]);
+  assert.deepStrictEqual(oct[0].claims.map((x) => [x.month, x.mine]), [['2026-09', false]], 'the claim being saved again is not compared with itself');
+  assert.deepStrictEqual(await ask('Chin Zhi Liang', '2026-11', []), []);
+  say('receipts claimed before');
+
   must(await api.post({ action: 'delete', id: sub.id }), 'delete');
   must(await api.post({ action: 'delete', id: other.id }), 'delete other');
   assert.deepStrictEqual((await api.get({ action: 'list' })).claims, []);
@@ -146,6 +165,7 @@ async function runAuth(api, password, log) {
   const sub = must(await api.post({ action: 'submit', claim: claim() }), 'submit without a password');
   must(await api.post({ action: 'upload', id: sub.id, token: sub.token, file: { id: 'f1', name: 'WFC - OCT Claim form.pdf', kind: 'form-pdf', data: b64('%PDF-secret') } }), 'upload without a password');
   must(await api.post({ action: 'finish', id: sub.id, token: sub.token }), 'finish without a password');
+  assert.strictEqual(must(await api.post({ action: 'seen', claimant: 'Someone', month: '2026-11', lines: [{ category: 'Petrol', receiptNo: 'a1b2c3', amount: 60 }] }), 'seen without a password').matches.length, 1);
   say('the Claim Builder side stays open');
 
   // nobody else can read or change anything

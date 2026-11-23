@@ -11,7 +11,7 @@
    No login yet (on purpose, for the demo): anyone who has the web app address can read and add claims.
    The setup steps are in README.md, "Put it online (Google)". */
 
-var VERSION = 5;
+var VERSION = 6;
 var MAX_RULES = 4000;                                 // the company's claim rules, in plain words (the dashboard's auditor checks claims against them)
 var MAX_LINES = 60;                                   // the claim form has 35 rows
 var MAX_FILE = 8 * 1024 * 1024;                      // bytes per file (Apps Script copes with about this much per request)
@@ -46,7 +46,7 @@ function route_(method, query, body) {
     var params = method === 'POST' ? (body || {}) : query;
     var action = params.action;
     var reads = { ping: 1, list: 1, file: 1 };                 // a read may come by GET or POST; a change only by POST
-    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_, rules: rules_, scan: scan_ };
+    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_, rules: rules_, scan: scan_, seen: seen_ };
     if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action])) throw fail_('Unknown action.');
     needKey_(action, params);
     // changes to a claim's record are one at a time; uploads of different files can run side by side
@@ -64,7 +64,7 @@ function fail_(message, code) { var e = new Error(message); e.userMessage = mess
 
 /* The password (script property DASH_KEY, set in Project settings > Script properties; never in this code). With none set the inbox is open.
    The Claim Builder's own calls (ping, submit, upload, finish) never need it; reading claims, opening files, changing a status and deleting do. */
-var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1, claude: 1, scan: 1 };
+var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1, claude: 1, scan: 1, seen: 1 };
 function passwordSet_() { return !!PropertiesService.getScriptProperties().getProperty('DASH_KEY'); }
 function needKey_(action, params) {
   if (OPEN_ACTIONS[action]) return;
@@ -254,7 +254,7 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_(), rules: true, scan: claudeOn_() }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_(), rules: true, scan: claudeOn_(), seen: true }; }
 
 /* ---------- the company's claim rules: plain words the dashboard's auditor checks every claim against (password needed to read or change) ---------- */
 function readRules_() {
@@ -437,6 +437,42 @@ function readSheet_(sheet) {
 function list_() {
   var db = open_();
   return { ok: true, claims: readSheet_(db.sheet), leave: readSheet_(leaveSheet_(db, false)), rules: readRules_() };
+}
+
+/* ---------- receipts claimed before: the Claim Builder asks while a claim is being made (the dashboard's auditor makes the same checks after) ----------
+   The same receipt number, or the same shop, date and amount, on a line of an earlier saved claim (any month, anyone). Toll and parking lines
+   are left out: they carry the Touch 'n Go card or statement number, the same every month. The claim being re-saved (same person, same month)
+   is not compared with itself. Open like the Claim Builder's other calls, so it answers only the month, the status and "yours or not",
+   never another person's name or lines. */
+var SEEN_OTHER_KIND = /transport|grab|e-?hailing|taxi|travel|flight|air\s?ticket|airfare|\btrains?\b|bus\s?ticket|ferry|online|shopping|shopee|lazada|supplier|purchase|petrol|fuel|diesel|minyak/i;
+function statementCat_(cat) { var c = String(cat || ''); return !SEEN_OTHER_KIND.test(c) && /toll|parking/i.test(c); }
+function receiptKey_(no) { return String(no || '').toLowerCase().replace(/[\s\-_.#\/:]+/g, ''); }
+function shopKey_(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/^\s+|\s+$/g, ''); }
+function lookKey_(name, date, amount) { var shop = shopKey_(name), a = Number(amount) || 0; return shop && /^\d{4}-\d{2}-\d{2}$/.test(date || '') && a > 0 ? shop + '|' + date + '|' + a.toFixed(2) : ''; }
+function seen_(b) {
+  var claimant = str_(b.claimant, 80), month = String(b.month || ''), who = claimant ? slug_(claimant) : '';
+  var self = who && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month + '_' + who : '';
+  var src = b.lines instanceof Array ? b.lines.slice(0, MAX_LINES) : [];
+  var byNo = {}, byLook = {};
+  readSheet_(open_().sheet).forEach(function (c) {
+    if (c.id === self || c.kind === 'leave') return;
+    var hit = { month: c.month, monthLabel: c.monthLabel || monthLabel_(c.month), status: c.status, mine: !!who && slug_(c.claimant) === who };
+    (c.lines || []).forEach(function (l) {
+      if (statementCat_(l.category)) return;
+      var rn = receiptKey_(l.receiptNo), lk = lookKey_(l.name, l.date, l.amount);
+      if (rn.length >= 3) (byNo[rn] = byNo[rn] || []).push(hit);
+      if (lk) (byLook[lk] = byLook[lk] || []).push(hit);
+    });
+  });
+  var matches = [];
+  src.forEach(function (l, i) {
+    l = l || {};
+    if (statementCat_(l.category)) return;
+    var rn = receiptKey_(str_(l.receiptNo, 60)), check = 'receipt', hits = rn.length >= 3 ? byNo[rn] : null;
+    if (!hits) { var lk = lookKey_(str_(l.name, 120), l.date, l.amount); hits = lk ? byLook[lk] : null; check = 'lookalike'; }
+    if (hits && hits.length) matches.push({ ref: str_(l.ref, 40) || String(i), check: check, claims: hits.slice(0, 3) });
+  });
+  return { ok: true, matches: matches };
 }
 
 function file_(q) {
