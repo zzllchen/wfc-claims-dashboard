@@ -34,11 +34,13 @@
   const monthIndex = (m) => +m.slice(0, 4) * 12 + +m.slice(5, 7) - 1;
   const kindOf = (cat) => {
     const c = String(cat || '');
-    return /petrol|fuel|diesel|minyak/i.test(c) ? 'fuel' : /toll/i.test(c) ? 'toll' : /parking/i.test(c) ? 'parking'
+    return /transport|grab|e-?hailing|taxi/i.test(c) ? 'transport' : /travel|flight|air\s?ticket|airfare|\btrains?\b|bus\s?ticket|ferry/i.test(c) ? 'travel'
+      : /online|shopping|shopee|lazada/i.test(c) ? 'shopping' : /supplier|purchase/i.test(c) ? 'supplier'
+      : /petrol|fuel|diesel|minyak/i.test(c) ? 'fuel' : /toll/i.test(c) ? 'toll' : /parking/i.test(c) ? 'parking'
       : /medical|klinik|clinic|pharmac|farmasi/i.test(c) ? 'medical' : /device|hardware|laptop|gadget|phone\b|tablet\b/i.test(c) ? 'device' : /\bai\b|software|subscription|saas/i.test(c) ? 'ai'
         : /accommodation|hotel/i.test(c) ? 'stay' : /meal|food|lunch|dinner|makan/i.test(c) ? 'meals' : /stationer|office suppl/i.test(c) ? 'stationery' : 'other';
   };
-  const KIND_WORD = { fuel: 'fuel', toll: 'toll', parking: 'parking', medical: 'medical', ai: 'AI tools', device: 'device', stay: 'accommodation', meals: 'meals', stationery: 'stationery', other: 'other' };
+  const KIND_WORD = { fuel: 'fuel', toll: 'toll', parking: 'parking', medical: 'medical', ai: 'AI tools', device: 'device', travel: 'travel', transport: 'transport', shopping: 'online shopping', supplier: 'supplier', stay: 'accommodation', meals: 'meals', stationery: 'stationery', other: 'other' };
   // toll and parking lines carry the Touch 'n Go card or statement number, which is the same every month: never a duplicate
   const statementLine = (k) => k === 'toll' || k === 'parking';
   const receiptKey = (no) => String(no || '').toLowerCase().replace(/[\s\-_.#/:]+/g, '');

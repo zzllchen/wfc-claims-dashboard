@@ -180,6 +180,10 @@ tr.fresh td { animation: fresh 5s ease-out; }
 .k-medical { --kb: #ffe9e7; --kc: #c2362a; }
 .k-ai { --kb: #f1e8ff; --kc: #7c3aed; }
 .k-device { --kb: #eef2f7; --kc: #475569; }
+.k-travel { --kb: #e0f2fe; --kc: #0369a1; }
+.k-transport { --kb: #fce7f3; --kc: #be185d; }
+.k-shopping { --kb: #ffedd5; --kc: #c2410c; }
+.k-supplier { --kb: #e2e8f0; --kc: #334155; }
 .k-stay { --kb: #dcf5f1; --kc: #0f766e; }
 .k-meals { --kb: #fff7d6; --kc: #a16207; }
 .k-stationery { --kb: #e8f3e0; --kc: #3f7d20; }

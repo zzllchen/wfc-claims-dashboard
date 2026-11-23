@@ -42,6 +42,18 @@ function fuelOf(l) {
   if (!(litres > 0 && litres < 300)) return {};
   return { litres: Math.round(litres * 1000) / 1000, fuel: l.fuel === 'diesel' ? 'diesel' : 'petrol' };
 }
+/* what else the claim tool read from a receipt, and the corrections people made (the same as the Google version) */
+function scanOf(sc) {
+  if (!sc || typeof sc !== 'object') return {};
+  const keep = {};
+  ['docType', 'currency', 'taxType', 'paymentMethod', 'source'].forEach((k) => { const v = str(sc[k], 40); if (v) keep[k] = v; });
+  ['dueDate', 'periodStart', 'periodEnd'].forEach((k) => { if (/^\d{4}-\d{2}-\d{2}$/.test(sc[k] || '')) keep[k] = sc[k]; });
+  ['total', 'subtotal', 'tax'].forEach((k) => { const v = Number(sc[k]); if (sc[k] != null && sc[k] !== '' && Number.isFinite(v) && v >= 0 && v < 1e7) keep[k] = round2(v); });
+  const l4 = String(sc.last4 == null ? '' : sc.last4).match(/(\d{4})$/);
+  if (l4) keep.last4 = l4[1];
+  return Object.keys(keep).length ? { scan: keep } : {};
+}
+const scanLogOf = (log) => (Array.isArray(log) ? log : []).slice(0, 60).map((e) => ({ field: str(e && e.field, 20), from: str(e && e.from, 80), to: str(e && e.to, 80), source: str(e && e.source, 10), docType: str(e && e.docType, 30), category: str(e && e.category, 40) })).filter((e) => e.field);
 function cleanClaim(c) {
   c = c || {};
   const claimant = str(c.claimant, 80);
@@ -52,11 +64,11 @@ function cleanClaim(c) {
   const lines = (Array.isArray(c.lines) ? c.lines : []).map((l, i) => ({
     no: i + 1, category: str(l && l.category, 40), date: /^\d{4}-\d{2}-\d{2}$/.test(l && l.date) ? l.date : '',
     name: str(l && l.name, 120), receiptNo: str(l && l.receiptNo, 60), amount: round2(Math.max(0, Number(l && l.amount) || 0)),
-    ...fuelOf(l),
+    ...fuelOf(l), ...scanOf(l && l.scan),
   }));
   if (!lines.length) throw fail('The claim has no lines.');
   return { claimant, month, monthLabel: monthLabel(month), total: round2(lines.reduce((a, l) => a + l.amount, 0)), lines,
-    from: emailOf(c.from), to: emailOf(c.to), subject: str(c.subject, 160) };
+    from: emailOf(c.from), to: emailOf(c.to), subject: str(c.subject, 160), scanLog: scanLogOf(c.scanLog) };
 }
 
 /* ---------- leave applications ---------- */
@@ -109,12 +121,12 @@ function makeApi(dataDir, opts) {
   const db = makeStore(dataDir);
   const now = () => new Date().toISOString();
   const password = String((opts && opts.password) || '');         // empty = open, as in the demo
-  const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude'];             // what the Claim Builder does: never needs the password
+  const OPEN = ['ping', 'submit', 'upload', 'finish', 'claude', 'scan'];             // what the Claim Builder does: never needs the password
   const MAX_RULES = 4000;
   const readRules = () => { try { const r = JSON.parse(fs.readFileSync(path.join(dataDir, 'rules.json'), 'utf8')); return { text: String(r.text || ''), updatedAt: String(r.updatedAt || '') }; } catch (e) { return { text: '', updatedAt: '' }; } };
 
   const actions = {
-    ping() { return { ok: true, service: 'wfc-claims', version: 4, where: 'local', auth: !!password, claude: false, leave: true, ask: false, rules: true }; },
+    ping() { return { ok: true, service: 'wfc-claims', version: 5, where: 'local', auth: !!password, claude: false, leave: true, ask: false, rules: true }; },
 
     // the company's claim rules, in plain words: the dashboard's auditor checks every claim against them (kept beside the claims, not in a claim folder)
     rules(b) {
@@ -125,7 +137,8 @@ function makeApi(dataDir, opts) {
       return { ok: true, rules: r };
     },
 
-    claude() { throw fail('Claude is not set up on the local inbox.', 503); },       // only the Google inbox has the relay
+    claude() { throw fail('Claude is not set up on the local inbox.', 503); },
+    scan() { throw fail('Claude is not set up on the local inbox.', 503); },          // the receipt scanner: the Google inbox only       // only the Google inbox has the relay
     ask() { throw fail('Ask Flow works with the Google inbox only.', 503); },          // the same: the company Claude key lives there (the password still applies first)
 
     list() {

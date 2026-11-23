@@ -11,7 +11,7 @@
    No login yet (on purpose, for the demo): anyone who has the web app address can read and add claims.
    The setup steps are in README.md, "Put it online (Google)". */
 
-var VERSION = 4;
+var VERSION = 5;
 var MAX_RULES = 4000;                                 // the company's claim rules, in plain words (the dashboard's auditor checks claims against them)
 var MAX_LINES = 60;                                   // the claim form has 35 rows
 var MAX_FILE = 8 * 1024 * 1024;                      // bytes per file (Apps Script copes with about this much per request)
@@ -46,7 +46,7 @@ function route_(method, query, body) {
     var params = method === 'POST' ? (body || {}) : query;
     var action = params.action;
     var reads = { ping: 1, list: 1, file: 1 };                 // a read may come by GET or POST; a change only by POST
-    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_, rules: rules_ };
+    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_, rules: rules_, scan: scan_ };
     if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action])) throw fail_('Unknown action.');
     needKey_(action, params);
     // changes to a claim's record are one at a time; uploads of different files can run side by side
@@ -64,7 +64,7 @@ function fail_(message, code) { var e = new Error(message); e.userMessage = mess
 
 /* The password (script property DASH_KEY, set in Project settings > Script properties; never in this code). With none set the inbox is open.
    The Claim Builder's own calls (ping, submit, upload, finish) never need it; reading claims, opening files, changing a status and deleting do. */
-var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1, claude: 1 };
+var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1, claude: 1, scan: 1 };
 function passwordSet_() { return !!PropertiesService.getScriptProperties().getProperty('DASH_KEY'); }
 function needKey_(action, params) {
   if (OPEN_ACTIONS[action]) return;
@@ -103,11 +103,47 @@ function cleanClaim_(c) {
     var line = { no: i + 1, category: str_(l.category, 40), date: /^\d{4}-\d{2}-\d{2}$/.test(l.date) ? l.date : '', name: str_(l.name, 120), receiptNo: str_(l.receiptNo, 60), amount: amount };
     var litres = Number(l.litres);         // a fuel line may carry the litres pumped and the fuel type: the dashboard works out the carbon of business travel from them
     if (litres > 0 && litres < 300) { line.litres = Math.round(litres * 1000) / 1000; line.fuel = l.fuel === 'diesel' ? 'diesel' : 'petrol'; }
+    var sc = scanOf_(l.scan);
+    if (sc) line.scan = sc;
     lines.push(line);
   }
   if (!lines.length) throw fail_('The claim has no lines.');
   return { claimant: claimant, month: month, monthLabel: monthLabel_(month), total: round2_(total), lines: lines,
-    from: emailOf_(c.from), to: emailOf_(c.to), subject: str_(c.subject, 160) };
+    from: emailOf_(c.from), to: emailOf_(c.to), subject: str_(c.subject, 160), scanLog: scanLogOf_(c.scanLog) };
+}
+
+/* what else the claim tool read from a receipt (not on the claim form): the kind of paper, the currency, tax, how it was paid (the card's
+   last 4 digits only), due and stay or travel dates, and who read it. Anything else is dropped. */
+function scanOf_(sc) {
+  if (!sc || typeof sc !== 'object') return null;
+  var keep = {}, n = 0;
+  ['docType', 'currency', 'taxType', 'paymentMethod', 'source'].forEach(function (k) { var v = str_(sc[k], 40); if (v) { keep[k] = v; n++; } });
+  ['dueDate', 'periodStart', 'periodEnd'].forEach(function (k) { if (/^\d{4}-\d{2}-\d{2}$/.test(sc[k] || '')) { keep[k] = sc[k]; n++; } });
+  ['total', 'subtotal', 'tax'].forEach(function (k) { var v = Number(sc[k]); if (sc[k] != null && sc[k] !== '' && isFinite(v) && v >= 0 && v < 1e7) { keep[k] = round2_(v); n++; } });
+  var l4 = String(sc.last4 == null ? '' : sc.last4).match(/(\d{4})$/);
+  if (l4) { keep.last4 = l4[1]; n++; }
+  return n ? keep : null;
+}
+/* the corrections the claimant made to what the claim tool filled in, so the weak spots of the scanner show up */
+function scanLogOf_(log) {
+  return (log instanceof Array ? log : []).slice(0, 60).map(function (e) {
+    e = e || {};
+    return { field: str_(e.field, 20), from: str_(e.from, 80), to: str_(e.to, 80), source: str_(e.source, 10), docType: str_(e.docType, 30), category: str_(e.category, 40) };
+  }).filter(function (e) { return e.field; });
+}
+var SCAN_LOG_COLS = ['when', 'claimant', 'claim month', 'field', 'filled in', 'corrected to', 'read by', 'document', 'type'];
+function logScan_(db, claim) {
+  var log = claim.scanLog || [];
+  if (!log.length) return;
+  var s = db.ss.getSheetByName('Scan log');
+  if (!s) {
+    s = db.ss.insertSheet('Scan log', db.ss.getSheets().length);
+    s.getRange(1, 1, 1, SCAN_LOG_COLS.length).setValues([SCAN_LOG_COLS]).setFontWeight('bold');
+    s.setFrozenRows(1);
+  }
+  var at = new Date().toISOString();
+  var rows = log.map(function (e) { return [at, claim.claimant, claim.month, e.field, e.from, e.to, e.source, e.docType, e.category]; });
+  s.getRange(s.getLastRow() + 1, 1, rows.length, SCAN_LOG_COLS.length).setValues(rows);
 }
 
 /* ---------- leave applications ---------- */
@@ -218,7 +254,7 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_(), rules: true }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_(), rules: true, scan: claudeOn_() }; }
 
 /* ---------- the company's claim rules: plain words the dashboard's auditor checks every claim against (password needed to read or change) ---------- */
 function readRules_() {
@@ -293,6 +329,51 @@ function claude_(b) {
     if (res.code === 401 || res.code === 403) throw fail_('The company Claude key was not accepted. Tell whoever looks after the inbox.', 502);
     if (res.code === 429 || /credit|billing|balance/i.test(res.text)) throw fail_('Claude is busy, or the company account has no credit left.', 502);
     throw fail_('Claude could not read that photo (HTTP ' + res.code + ').', 502);
+  }
+  var j = res.json;
+  return { ok: true, reply: { content: j.content, stop_reason: j.stop_reason, usage: j.usage, model: j.model } };
+}
+
+/* ---------- the receipt scanner: Claude reads a receipt or invoice the claim tool was not sure about ----------
+   Open like the photo check above (staff send claims without the password), so it is kept narrow: one request with 1-3 page images
+   (JPEG or PNG) or one PDF, plus at most one text note (the text the claim tool already read); the instructions and the answer's
+   shape come with it, but the model must be one of the two allowed, the answer length is capped and there is a daily cap of its own. */
+var SCAN_MODELS = ['claude-sonnet-5-5', 'claude-opus-5-5'];
+var SCAN_MODEL = 'claude-sonnet-5-5';                // script property SCAN_MODEL changes the default
+var SCAN_MAX_TOKENS = 2500;
+var SCAN_MAX_CHARS = 14000000;                       // the pages as base64, about 10 MB
+var SCAN_DAILY_CAP = 300;                            // scans a day for the whole team; script property SCAN_DAILY_CAP changes it
+
+function scan_(b) {
+  var props = PropertiesService.getScriptProperties(), key = props.getProperty('CLAUDE_KEY');
+  if (!key) throw fail_('Claude is not set up on the inbox.', 503);
+  var r = (b && b.request) || {}, m = r.messages;
+  if (!(m instanceof Array) || m.length !== 1 || !m[0] || m[0].role !== 'user' || !(m[0].content instanceof Array)) throw fail_('Bad request.');
+  var images = 0, docs = 0, texts = 0, chars = 0;
+  m[0].content.forEach(function (c) {
+    var src = c && c.source;
+    if (c && c.type === 'image' && src && src.type === 'base64' && /^image\/(jpeg|png)$/.test(src.media_type) && typeof src.data === 'string') { images++; chars += src.data.length; }
+    else if (c && c.type === 'document' && src && src.type === 'base64' && src.media_type === 'application/pdf' && typeof src.data === 'string') { docs++; chars += src.data.length; }
+    else if (c && c.type === 'text' && typeof c.text === 'string' && c.text.length <= 20000) { texts++; chars += c.text.length; }
+    else throw fail_('Bad request.');
+  });
+  if (texts > 1 || docs > 1 || images > 3 || (images + docs) < 1 || (images && docs)) throw fail_('Bad request.');
+  if (chars > SCAN_MAX_CHARS) throw fail_('That file is too big to read.', 413);
+  if (typeof r.system !== 'string' || !r.system || r.system.length > 10000) throw fail_('Bad request.');
+  var format = r.output_config && r.output_config.format;
+  if (format && (format.type !== 'json_schema' || typeof format.schema !== 'object' || JSON.stringify(format.schema).length > 20000)) throw fail_('Bad request.');
+  var model = SCAN_MODELS.indexOf(r.model) >= 0 ? r.model : (props.getProperty('SCAN_MODEL') || SCAN_MODEL);
+  claudeCount_('SCAN_DAY', 'SCAN_DAILY_CAP', SCAN_DAILY_CAP);
+  var effort = r.output_config && /^(low|medium|high)$/.test(String(r.output_config.effort)) ? r.output_config.effort : 'low';
+  var oc = { effort: effort };
+  if (format) oc.format = { type: 'json_schema', schema: format.schema };
+  var payload = { model: model, max_tokens: Math.min(parseInt(r.max_tokens, 10) || SCAN_MAX_TOKENS, SCAN_MAX_TOKENS), system: r.system, messages: m, output_config: oc };
+  var res = callAsk_(payload, key, false);
+  if (res.code === 400 && /effort|output_config/i.test(res.text) && !format) { delete payload.output_config; res = callAsk_(payload, key, false); }
+  if (res.code !== 200 || !res.json) {
+    if (res.code === 401 || res.code === 403) throw fail_('The company Claude key was not accepted. Tell whoever looks after the inbox.', 502);
+    if (res.code === 429 || /credit|billing|balance/i.test(res.text)) throw fail_('Claude is busy, or the company account has no credit left.', 502);
+    throw fail_('Claude could not read that file (HTTP ' + res.code + ').', 502);
   }
   var j = res.json;
   return { ok: true, reply: { content: j.content, stop_reason: j.stop_reason, usage: j.usage, model: j.model } };
@@ -418,6 +499,7 @@ function finish_(b) {
   if (old) trash_(old.folderId);
   rec.published = published; rec.pending = null;
   putRec_(db, rec);
+  if (!isLeaveId_(rec.id)) { try { logScan_(db, published); } catch (e) { console.error(e); } }        // never stops a claim from arriving
   return { ok: true, id: rec.id, version: version, files: files.length };
 }
 

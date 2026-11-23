@@ -103,7 +103,8 @@ Dates: use "Today" below. "This month" is today's calendar month, "last month" t
 
   /* ---------- step 2: the lookup, run here on the real records ---------- */
   const lc = (s) => String(s || '').toLowerCase();
-  const CATEGORY_WORDS = { petrol: /petrol|fuel|minyak|diesel/i, toll: /toll|tol\b/i, parking: /parking|letak/i, medical: /medic|clinic|klinik/i, 'ai tools': /\bai\b|software|subscription/i, accommodation: /accommodation|hotel/i };
+  const CATEGORY_WORDS = { petrol: /petrol|fuel|minyak|diesel/i, toll: /toll|tol\b/i, parking: /parking|letak/i, medical: /medic|clinic|klinik/i, 'ai tools': /\bai\b|software|subscription/i, accommodation: /accommodation|hotel/i,
+    travel: /travel|flight|tiket|penerbangan|机票|trains?|bus/i, transport: /transport|grab|taxi|teksi|e-?hailing/i, 'online shopping': /online|shopee|lazada|shopping|beli/i, 'supplier invoice': /supplier|pembekal|供应商/i };
   function catMatch(cat, wanted) {
     return wanted.some((w) => { const a = lc(cat), b = lc(w); return a === b || a.includes(b) || b.includes(a) || (CATEGORY_WORDS[a] && CATEGORY_WORDS[a].test(w)); });
   }

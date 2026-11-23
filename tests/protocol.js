@@ -9,8 +9,10 @@ const claim = (extra) => Object.assign({
   lines: [
     { category: 'Petrol', date: '2026-10-05', name: 'Kejayaan Teguh Enterprise', receiptNo: 'a1b2c3', amount: 60, litres: 30.1505, fuel: 'petrol' },
     { category: 'Toll', date: '2026-10-31', name: "Touch 'n Go", receiptNo: '1130739887', amount: 27.4 },
-    { category: 'Medical', date: '2026-10-12', name: 'Klinik Putra Care', receiptNo: '5521', amount: 75.1 },
+    { category: 'Medical', date: '2026-10-12', name: 'Klinik Putra Care', receiptNo: '5521', amount: 75.1,
+      scan: { docType: 'receipt', currency: 'MYR', tax: 4.5, paymentMethod: 'Visa', last4: '4111111111114444', periodStart: 'soon', bogus: 'x', source: 'claude' } },
   ],
+  scanLog: [{ field: 'amount', from: '75.00', to: '75.10', source: 'claude', docType: 'receipt', category: 'Medical' }, { from: 'no field' }],
 }, extra);
 
 async function runProtocol(api, log) {
@@ -70,6 +72,9 @@ async function runProtocol(api, log) {
   const list = must(await api.get({ action: 'list' }), 'list').claims;
   assert.strictEqual(list.length, 1);
   const c = list[0];
+  assert.deepStrictEqual(c.lines[2].scan, { docType: 'receipt', currency: 'MYR', paymentMethod: 'Visa', source: 'claude', tax: 4.5, last4: '4444' }, 'receipt extras kept, the card cut to 4 digits, anything odd dropped');
+  assert.ok(!('scan' in c.lines[0]), 'a line with nothing extra has no scan');
+  assert.deepStrictEqual(c.scanLog, [{ field: 'amount', from: '75.00', to: '75.10', source: 'claude', docType: 'receipt', category: 'Medical' }], 'corrections kept, empty ones dropped');
   assert.strictEqual(c.claimant, 'Chin Zhi Liang'); assert.strictEqual(c.monthLabel, 'October 2026');
   assert.strictEqual(c.total, 162.5, 'the total is added up by the inbox, not taken from the sender');
   assert.strictEqual(c.status, 'new'); assert.strictEqual(c.version, 1); assert.strictEqual(c.lines.length, 3);

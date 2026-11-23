@@ -120,7 +120,7 @@ function fakeGoogle() {
   const bad = JSON.parse(sandbox.doPost({ parameter: {}, postData: { contents: 'nope' } }).getContent());
   assert.strictEqual(bad.ok, false);
   const book1 = fake.sheets.get(fake.props.SHEET_ID);
-  assert.deepStrictEqual(book1.list.map((sh) => sh._name || book1.names.get(sh)), ['Claims', 'Leave'], 'claims and leave each have their own sheet');
+  assert.deepStrictEqual(book1.list.map((sh) => sh._name || book1.names.get(sh)), ['Claims', 'Scan log', 'Leave'], 'claims and leave each have their own sheet (and corrections to the scanner a Scan log)');
   console.log('  ok  sheet + folder made on first use, old versions go to the bin');
 
   // the same inbox once the password (script property DASH_KEY) is set
@@ -253,6 +253,35 @@ function fakeGoogle() {
   assert.strictEqual((await askFlow()).ok, true); refused(await askFlow(), 429, 'over the Ask Flow cap');
   delete fake.props.ASK_DAILY_CAP; delete fake.props.ASK_DAY;
   console.log('  ok  Ask Flow: retries without fallbacks, has its own daily cap');
+
+  // the receipt scanner: 1-3 pages or one PDF, one of two models, its own cap, no password needed
+  const scanReq = (over) => Object.assign({ model: 'claude-opus-5-5', max_tokens: 9000, system: 'Read this receipt.', output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object' } } },
+    messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' } }, { type: 'text', text: 'Text read on the PC: TOTAL 10.00' }] }] }, over);
+  const scan = (over) => api.post({ action: 'scan', request: scanReq(over) });
+  fake.respond(null);
+  const s0 = fake.fetches.length;
+  const sc = await scan();
+  assert.strictEqual(sc.ok, true, JSON.stringify(sc).slice(0, 200));
+  const sp = fake.fetches[fake.fetches.length - 1].payload;
+  assert.strictEqual(sp.model, 'claude-opus-5-5', 'one of the two allowed models');
+  assert.strictEqual(sp.max_tokens, 2500, 'the answer length is capped');
+  assert.deepStrictEqual(sp.output_config, { effort: 'low', format: { type: 'json_schema', schema: { type: 'object' } } });
+  assert.strictEqual((await scan({ model: 'claude-mythos-9' })).ok, true);
+  assert.strictEqual(fake.fetches[fake.fetches.length - 1].payload.model, 'claude-sonnet-5-5', 'any other model falls back to the default');
+  const pg = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: photo } };
+  assert.strictEqual((await scan({ messages: [{ role: 'user', content: [pg, pg, pg] }] })).ok, true, 'three page images');
+  const s1 = fake.fetches.length;
+  refused(await scan({ messages: [{ role: 'user', content: [pg, pg, pg, pg] }] }), 400, 'four pages');
+  refused(await scan({ messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] }), 400, 'no page at all');
+  refused(await scan({ messages: [{ role: 'user', content: [pg, scanReq().messages[0].content[0]] }] }), 400, 'pages and a PDF together');
+  refused(await scan({ system: '' }), 400, 'no instructions');
+  refused(await scan({ messages: [{ role: 'user', content: [pg] }, { role: 'assistant', content: 'x' }] }), 400, 'a conversation');
+  assert.strictEqual(fake.fetches.length, s1, 'none of those reached Anthropic');
+  fake.props.SCAN_DAILY_CAP = '1'; delete fake.props.SCAN_DAY;
+  assert.strictEqual((await scan()).ok, true); refused(await scan(), 429, 'over the scanner cap');
+  delete fake.props.SCAN_DAILY_CAP; delete fake.props.SCAN_DAY;
+  assert.ok(s0 < fake.fetches.length);
+  console.log('  ok  receipt scanner: pages or a PDF, two allowed models, capped, its own daily cap');
 
   console.log('Apps Script tests passed');
 })().catch((e) => { console.error('FAILED:', e); process.exit(1); });
