@@ -80,9 +80,30 @@ One shared password protects reading claims, opening files, changing a status an
 | `POST upload` | one file (base64) for that token |
 | `POST finish` | makes the claim appear on the dashboard (so nobody sees a half-sent claim) |
 | `POST status` | status and/or note, with a history line (a claim: new, checked, paid, question; a leave application: new, recorded, question) |
+| `POST remind` | the monthly reminder list, no password (see "Monthly reminders"): `op: 'key'` gives the public key the phones subscribe with, `op: 'join'` (`endpoint`, `name`, optional `email`) puts a phone on the list, `op: 'leave'` (`endpoint`) takes it off, `op: 'status'` (`endpoint`) says whether it is on |
 
 One claim per person per month (`2026-10_chin-zhi-liang`) and one leave application per person per start date (`leave-2026-11-05_chin-zhi-liang`); saving again replaces it and keeps the history. On Google, claims are on the sheet *Claims* and leave on a sheet *Leave* of the same spreadsheet (made when the first leave arrives); locally each application is a folder under `data`. `ping` says `leave: true` when the inbox understands leave, so the Claim Builder and the dashboard can tell an older inbox. While a new version is uploading, the dashboard keeps showing the old one. The same calls are answered by `server/server.js` (local) and `backend/Code.gs` (Google); `tests/protocol.js` runs one scenario against both.
 
+
+## Monthly reminders (push notifications)
+
+Staff can switch a reminder on inside the Claim Builder. The inbox then sends a short notification to their phone or laptop on the **1st, 8th, 13th and 15th of every month, at about 09:00 Malaysia time**, to claim last month's expenses. **Nobody is reminded after they have submitted that claim**: the inbox looks for a claim for last month under the same name, so the name given when switching reminders on must be the name used on the claim. The notification carries no text from the inbox; the Claim Builder writes its words from the date. It only works on the online (Google) inbox, not the local demo.
+
+**One-time steps for the owner** (the Google account the script runs in):
+
+1. Open the script and paste in the new `backend/Code.gs` over the old one. Save.
+2. **Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy.**
+3. In the editor's function list (the drop-down above the code) pick **`setupReminders`** and press **Run**. Google asks to authorise: **Review permissions > choose the account > Advanced > Go to WFC Claims inbox (unsafe) > Allow**. This lets the script start by itself each morning, when nobody is there to press anything. Run it once only; running it again just replaces the trigger with a fresh one, never doubles it.
+4. Optional test: pick **`remindNow`** and press **Run**. It sends a reminder to everyone who has switched reminders on, on any day, claimed or not (the log underneath says how many).
+5. Staff then switch reminders on inside the Claim Builder.
+
+Good to know:
+
+- Google starts a daily job at some point in the hour from 09:00, so a reminder may arrive up to an hour after nine.
+- **The list** is the sheet *Reminders* in the *WFC Claims* spreadsheet (name, when it was added, when a reminder was last sent and what the push service answered). A phone or browser that has switched notifications off for good is taken off the list on its own. Up to 300 phones; each run stops sending after about four minutes.
+- **The sender's key.** The script makes its own key pair the first time it needs one and keeps it in the script properties `VAPID_PRIVATE` and `VAPID_PUBLIC` (never in the code). Do not delete them and do not share the private one: every phone is tied to that key, and a new one means everyone has to switch reminders on again.
+- The push services are given `mailto:marketing.wfcsystems@gmail.com` as the contact for this sender. Set the script property `VAPID_SUBJECT` (for example `mailto:accounts@yourcompany.com`) to use another.
+- **To stop all reminders:** in the editor open **Triggers** (the clock icon) and delete the `remindDaily` trigger. Run `setupReminders` to start again.
 
 ## Claude through the company (optional)
 
@@ -102,7 +123,7 @@ js/inbox.js                 talks to the inbox
 js/sample.js                made-up claims for the demo view
 server/server.js            the local inbox (also serves the page); no packages needed
 backend/Code.gs             the Google inbox (Apps Script)
-tests/                      node tests/server.test.js, appsscript.test.js, sender.test.js
+tests/                      node tests/server.test.js, appsscript.test.js, remind.test.js, sender.test.js (fakegoogle.js is the stand-in for Google they share)
 Start Demo.bat              one click: inbox + dashboard + local Claim Builder, opens both pages
 Start.bat                   starts only the local inbox + dashboard
 data/                       claims received locally (never commit this folder)
@@ -113,7 +134,8 @@ data/                       claims received locally (never commit this folder)
 ```
 node tests/server.test.js       the local inbox over real HTTP (+ browser rules, only the page is served)
 node tests/appsscript.test.js   Code.gs against a stand-in for Google (logic only: see below)
+node tests/remind.test.js       the monthly reminders: the signing maths against Node's own crypto, who is pinged on which day, the trigger
 node tests/sender.test.js       the Claim Builder's sender against the local inbox
 ```
 
-`appsscript.test.js` proves the logic and that Google's version answers exactly like the local one. It cannot prove that Google accepts the script and its permissions: that is only known at the first real deploy.
+`appsscript.test.js` proves the logic and that Google's version answers exactly like the local one. It cannot prove that Google accepts the script and its permissions: that is only known at the first real deploy. In the same way `remind.test.js` proves the reminder signature is valid (Node's crypto checks it) but cannot prove that Google's, Apple's or Mozilla's push services accept the pings: that is only known at the first real `remindNow`.

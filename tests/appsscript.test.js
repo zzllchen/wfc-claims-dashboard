@@ -9,96 +9,7 @@ const path = require('path');
 const vm = require('vm');
 const { runProtocol, runAuth, runLeave } = require('./protocol');
 
-function fakeGoogle() {
-  const props = {};
-  const sheets = new Map(), folders = new Map(), files = new Map();
-  let n = 0;
-  const nextId = (p) => p + (++n) + crypto.randomBytes(3).toString('hex');
-
-  function makeSheet() {
-    const rows = [];       // rows[r][c], 0-based
-    let hidden = [];
-    const sheet = {
-      rows, _hidden: () => hidden,
-      setName(n) { sheet._name = n; return sheet; }, setFrozenRows() { return sheet; }, hideColumns(c) { hidden.push(c); return sheet; },
-      getLastRow() { let l = 0; rows.forEach((r, i) => { if (r && r.some((v) => v !== '' && v != null)) l = i + 1; }); return l; },
-      getRange(r, c, nr = 1, nc = 1) {
-        const rg = {
-          setValues(v) { v.forEach((row, i) => row.forEach((val, j) => { rows[r - 1 + i] = rows[r - 1 + i] || []; rows[r - 1 + i][c - 1 + j] = val; })); return rg; },
-          getValues() { const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) row.push(((rows[r - 1 + i] || [])[c - 1 + j]) ?? ''); out.push(row); } return out; },
-          getValue() { return rg.getValues()[0][0]; },
-          setFontWeight() { return rg; },
-        };
-        return rg;
-      },
-      deleteRow(r) { rows.splice(r - 1, 1); },
-    };
-    return sheet;
-  }
-  function makeFolder(name) {
-    const id = nextId('folder'); const f = { id, name, trashed: false, files: [] };
-    folders.set(id, f);
-    return folderApi(f);
-  }
-  function folderApi(f) {
-    const api = {
-      getId: () => f.id,
-      createFolder: (nm) => makeFolder(nm),
-      createFile(blob) {
-        const fid = nextId('file'); const rec = { id: fid, name: blob.getName(), bytes: blob.getBytes(), mime: blob.getContentType(), description: '', created: new Date(Date.now() + n) };
-        files.set(fid, rec); f.files.push(rec);
-        return fileApi(rec);
-      },
-      getFiles() { let i = 0; const list = f.files.slice(); return { hasNext: () => i < list.length, next: () => fileApi(list[i++]) }; },
-      setTrashed(t) { f.trashed = t; return api; },
-    };
-    return api;
-  }
-  const fileApi = (rec) => ({
-    getId: () => rec.id, getName: () => rec.name, getMimeType: () => rec.mime, getSize: () => rec.bytes.length,
-    getDescription: () => rec.description, setDescription(d) { rec.description = d; return this; },
-    getDateCreated: () => rec.created, getBlob: () => ({ getBytes: () => rec.bytes }),
-  });
-
-  // a spreadsheet can have several sheets (the inbox keeps claims on "Claims" and leave on "Leave")
-  const book = (id, x) => ({
-    getId: () => id, getSheets: () => x.list.slice(),
-    getSheetByName: (nm) => x.list.find((sh) => (sh._name || x.names.get(sh)) === nm) || null,
-    insertSheet(nm, at) { const sh = makeSheet(); x.names.set(sh, nm); sh._name = nm; x.list.splice(at == null ? x.list.length : at, 0, sh); return sh; },
-  });
-  const fetches = [];
-  let responder = null;
-  const OK_BODY = JSON.stringify({ content: [{ type: 'text', text: '{"isReceipt":true,"amount":60}' }], stop_reason: 'end_turn', usage: { input_tokens: 1500, output_tokens: 80 }, model: 'claude-sonnet-5-5', id: 'msg_x' });
-  const G = {
-    UrlFetchApp: {
-      fetch(url, opts) {
-        fetches.push({ url, opts, payload: JSON.parse(opts.payload) });
-        const r = responder ? responder(fetches.length, JSON.parse(opts.payload)) : { code: 200, body: OK_BODY };
-        return { getResponseCode: () => r.code, getContentText: () => r.body };
-      },
-    },
-    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ getContent: () => s, setMimeType() { return this; } }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } }) },
-    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    Utilities: {
-      getUuid: () => crypto.randomUUID(),
-      base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),      // Google gives signed bytes
-      base64Encode: (bytes) => Buffer.from(bytes.map((b) => b & 255)).toString('base64'),
-      newBlob: (bytes, mime, name) => ({ getBytes: () => bytes, getContentType: () => mime, getName: () => name }),
-      sleep: () => {},
-    },
-    SpreadsheetApp: {
-      create(name) { const id = nextId('sheet'); const first = makeSheet(); const x = { name, list: [first], names: new Map([[first, 'Sheet1']]) }; sheets.set(id, x); return book(id, x); },
-      openById(id) { const x = sheets.get(id); if (!x) throw new Error('no sheet'); return book(id, x); },
-    },
-    DriveApp: {
-      createFolder: (name) => makeFolder(name),
-      getFolderById(id) { const f = folders.get(id); if (!f) throw new Error('no folder'); return folderApi(f); },
-      getFileById(id) { const r = files.get(id); if (!r) throw new Error('no file'); return fileApi(r); },
-    },
-  };
-  return { G, props, sheets, folders, files, fetches, respond: (f) => { responder = f; } };
-}
+const { fakeGoogle } = require('./fakegoogle');
 
 (async () => {
   const fake = fakeGoogle();
@@ -112,6 +23,11 @@ function fakeGoogle() {
   };
   await runProtocol(api, (s) => console.log('  ok  ' + s));
   await runLeave(api, (s) => console.log('  ok  ' + s));
+  const pinged = await api.get({ action: 'ping' });
+  assert.strictEqual(pinged.version, 7, 'the script is version 7 (monthly reminders)');
+  assert.strictEqual(pinged.remind, true, 'ping says reminders are understood');
+  assert.strictEqual((await api.get({ action: 'remind', op: 'key' })).ok, false, 'reminders are a change: POST only');
+  console.log('  ok  ping: version 7, remind: true (the reminders themselves are in tests/remind.test.js)');
 
   // things only the Google version has
   assert.ok(fake.props.SHEET_ID && fake.props.FOLDER_ID, 'the sheet and the folder were created on first use');

@@ -6,12 +6,13 @@
    Where things are kept (all in the Google account that deploys this script, created on first use):
      - a Google Sheet "WFC Claims"          one row per claim on its "Claims" sheet, one per leave application on its "Leave" sheet (handy for Agnes to open too)
      - a Drive folder "WFC Claims files"    one sub-folder per claim, holding the claim form, receipts, TNG statement
-   Nothing else is stored, and nothing leaves that Google account.
+     - a sheet "Reminders"                  who switched on the monthly claim reminder (their name and phone's push address), made on first use
+   Nothing else is stored, and nothing leaves that Google account (except the reminder pings, which go to Google's, Apple's, Mozilla's or Microsoft's push service).
 
    No login yet (on purpose, for the demo): anyone who has the web app address can read and add claims.
    The setup steps are in README.md, "Put it online (Google)". */
 
-var VERSION = 6;
+var VERSION = 7;
 var MAX_RULES = 4000;                                 // the company's claim rules, in plain words (the dashboard's auditor checks claims against them)
 var MAX_LINES = 60;                                   // the claim form has 35 rows
 var MAX_FILE = 8 * 1024 * 1024;                      // bytes per file (Apps Script copes with about this much per request)
@@ -46,7 +47,7 @@ function route_(method, query, body) {
     var params = method === 'POST' ? (body || {}) : query;
     var action = params.action;
     var reads = { ping: 1, list: 1, file: 1 };                 // a read may come by GET or POST; a change only by POST
-    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_, rules: rules_, scan: scan_, seen: seen_ };
+    var known = { ping: ping_, list: list_, file: file_, submit: submit_, upload: upload_, finish: finish_, status: status_, 'delete': delete_, claude: claude_, ask: ask_, rules: rules_, scan: scan_, seen: seen_, remind: remind_ };
     if (!known.hasOwnProperty(action) || (method === 'GET' && !reads[action])) throw fail_('Unknown action.');
     needKey_(action, params);
     // changes to a claim's record are one at a time; uploads of different files can run side by side
@@ -64,7 +65,7 @@ function fail_(message, code) { var e = new Error(message); e.userMessage = mess
 
 /* The password (script property DASH_KEY, set in Project settings > Script properties; never in this code). With none set the inbox is open.
    The Claim Builder's own calls (ping, submit, upload, finish) never need it; reading claims, opening files, changing a status and deleting do. */
-var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1, claude: 1, scan: 1, seen: 1 };
+var OPEN_ACTIONS = { ping: 1, submit: 1, upload: 1, finish: 1, claude: 1, scan: 1, seen: 1, remind: 1 };
 function passwordSet_() { return !!PropertiesService.getScriptProperties().getProperty('DASH_KEY'); }
 function needKey_(action, params) {
   if (OPEN_ACTIONS[action]) return;
@@ -254,7 +255,7 @@ function trash_(folderId) {
 }
 
 /* ---------- actions ---------- */
-function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_(), rules: true, scan: claudeOn_(), seen: true }; }
+function ping_() { return { ok: true, service: 'wfc-claims', version: VERSION, where: 'google', auth: passwordSet_(), claude: claudeOn_(), leave: true, ask: claudeOn_(), rules: true, scan: claudeOn_(), seen: true, remind: true }; }
 
 /* ---------- the company's claim rules: plain words the dashboard's auditor checks every claim against (password needed to read or change) ---------- */
 function readRules_() {
@@ -563,4 +564,356 @@ function delete_(b) {
   var sheet = sheetFor_(db, rec.id, false);
   sheet.deleteRow(rowOf_(sheet, rec.id));
   return { ok: true };
+}
+
+/* ---------- monthly claim reminders (web push) ----------
+   Staff switch the reminder on inside the Claim Builder (action: remind). On the 1st, 8th, 13th and 15th of each month, about 09:00 Malaysia
+   time, a daily time trigger (remindDaily, made by running setupReminders once) pings every phone or laptop whose owner has not yet sent
+   last month's claim. The ping is a Web Push (RFC 8030) signed with VAPID (RFC 8292) and carries NO text: the Claim Builder's service worker
+   writes the notification from the date, so nothing needs encrypting.
+   Apps Script has no ECDSA, so the signature (ES256 = ECDSA on P-256 with SHA-256) is worked out below with BigInt. The sender's key pair is made
+   by the script the first time it is needed and kept in the script properties VAPID_PRIVATE and VAPID_PUBLIC (never in this code). Do not delete
+   them: every phone that switched reminders on is tied to that public key and would have to switch on again. */
+var REMIND_DAYS = [1, 8, 13, 15];                      // days of the month (Malaysia time) on which staff are reminded
+var REMIND_TZ = 'Asia/Kuala_Lumpur';
+var REMIND_MAX = 300;                                  // phones and laptops that can have reminders on
+var REMIND_BUDGET_MS = 4 * 60 * 1000;                  // stop sending after about four minutes (a run may last six)
+var REMIND_COLS = ['endpoint', 'name', 'slug', 'email', 'added', 'updated', 'lastSent', 'lastResult'];
+var PUSH_HOSTS = ['fcm.googleapis.com', 'updates.push.services.mozilla.com', 'push.services.mozilla.com', 'web.push.apple.com', 'push.apple.com', 'notify.windows.com'];
+var VAPID_SUBJECT = 'mailto:marketing.wfcsystems@gmail.com';       // who a push service can contact about this sender (script property VAPID_SUBJECT changes it)
+
+/* ---- P-256 (secp256r1) with BigInt: points are kept as Jacobian [X, Y, Z] (affine x = X/Z^2, y = Y/Z^3), Z = 0 is the point at infinity ----
+   Not constant-time, which does not matter here: the only secret is used inside Google's server for a few signatures, never in a loop an
+   outsider can time. Numbers are made with BigInt('0x..') rather than 5n so every editor and linter reads the file. */
+var P256_ = null;
+function p256_() {
+  if (!P256_) {
+    var hex = function (s) { return BigInt('0x' + s); };
+    P256_ = { p: hex('ffffffff00000001000000000000000000000000ffffffffffffffffffffffff'), n: hex('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551'),
+      gx: hex('6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'), gy: hex('4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5'),
+      zero: BigInt(0), one: BigInt(1), two: BigInt(2), three: BigInt(3), four: BigInt(4), eight: BigInt(8) };
+  }
+  return P256_;
+}
+function bigMod_(a, m) { var r = a % m; return r < p256_().zero ? r + m : r; }
+function modInv_(a, m) {                                  // extended Euclid
+  var c = p256_(), r0 = m, r1 = bigMod_(a, m), s0 = c.zero, s1 = c.one;
+  while (r1 !== c.zero) {
+    var q = r0 / r1, t = r0 - q * r1;
+    r0 = r1; r1 = t;
+    t = s0 - q * s1; s0 = s1; s1 = t;
+  }
+  if (r0 !== c.one) throw new Error('No inverse.');
+  return bigMod_(s0, m);
+}
+function jDouble_(P) {
+  var c = p256_(), p = c.p, X = P[0], Y = P[1], Z = P[2];
+  if (Z === c.zero || Y === c.zero) return [c.one, c.one, c.zero];
+  var delta = Z * Z % p, gamma = Y * Y % p, beta = X * gamma % p;
+  var alpha = c.three * bigMod_((X - delta) * (X + delta), p) % p;                   // 3 (X - Z^2) (X + Z^2), because a = -3
+  var X3 = bigMod_(alpha * alpha - c.eight * beta, p);
+  var Z3 = bigMod_((Y + Z) * (Y + Z) - gamma - delta, p);
+  var Y3 = bigMod_(alpha * (c.four * beta - X3) - c.eight * gamma * gamma, p);
+  return [X3, Y3, Z3];
+}
+function jAdd_(P, Q) {
+  var c = p256_(), p = c.p;
+  if (P[2] === c.zero) return Q;
+  if (Q[2] === c.zero) return P;
+  var z1z1 = P[2] * P[2] % p, z2z2 = Q[2] * Q[2] % p;
+  var u1 = P[0] * z2z2 % p, u2 = Q[0] * z1z1 % p;
+  var s1 = P[1] * Q[2] % p * z2z2 % p, s2 = Q[1] * P[2] % p * z1z1 % p;
+  var h = bigMod_(u2 - u1, p);
+  if (h === c.zero) return s1 === s2 ? jDouble_(P) : [c.one, c.one, c.zero];       // the same point, or opposite points
+  var i = c.four * h * h % p, j = h * i % p, r = c.two * bigMod_(s2 - s1, p), v = u1 * i % p;
+  var X3 = bigMod_(r * r - j - c.two * v, p);
+  var Y3 = bigMod_(r * (v - X3) - c.two * s1 * j, p);
+  var Z3 = bigMod_(((P[2] + Q[2]) * (P[2] + Q[2]) - z1z1 - z2z2) * h, p);
+  return [X3, Y3, Z3];
+}
+/* k * (x, y) as {x, y} (BigInt), or null for the point at infinity */
+function p256Mul_(k, x, y) {
+  var c = p256_(), R = [c.one, c.one, c.zero], Q = [x, y, c.one], bits = k.toString(2);
+  for (var i = 0; i < bits.length; i++) {
+    R = jDouble_(R);
+    if (bits.charAt(i) === '1') R = jAdd_(R, Q);
+  }
+  if (R[2] === c.zero) return null;
+  var zi = modInv_(R[2], c.p), zi2 = zi * zi % c.p;
+  return { x: R[0] * zi2 % c.p, y: R[1] * zi2 % c.p * zi % c.p };
+}
+
+/* ---- bytes ----
+   Apps Script gives and takes signed bytes (-128..127); in here a byte list is always 0..255 and is made signed only for a Google call. */
+function u8_(a) { var o = []; for (var i = 0; i < a.length; i++) o.push(a[i] & 255); return o; }
+function s8_(a) { var o = []; for (var i = 0; i < a.length; i++) o.push((a[i] & 255) > 127 ? (a[i] & 255) - 256 : a[i] & 255); return o; }
+function asciiBytes_(s) { var o = []; for (var i = 0; i < s.length; i++) o.push(s.charCodeAt(i) & 127); return o; }
+function bigFromBytes_(b) {
+  var h = '';
+  for (var i = 0; i < b.length; i++) h += ('0' + (b[i] & 255).toString(16)).slice(-2);
+  return BigInt('0x' + (h || '0'));
+}
+function bigToBytes_(x, len) {
+  var h = x.toString(16), o = [];
+  while (h.length < len * 2) h = '0' + h;
+  for (var i = 0; i < h.length; i += 2) o.push(parseInt(h.substr(i, 2), 16));
+  return o;
+}
+function b64u_(bytes) { return Utilities.base64Encode(s8_(bytes)).replace(/\s+/g, '').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64uBytes_(s) {
+  var t = String(s).replace(/-/g, '+').replace(/_/g, '/');
+  while (t.length % 4) t += '=';
+  return u8_(Utilities.base64Decode(t));
+}
+function sha256_(bytes) { return u8_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s8_(bytes))); }
+function hmac256_(keyBytes, msgBytes) { return u8_(Utilities.computeHmacSha256Signature(s8_(msgBytes), s8_(keyBytes))); }
+
+/* ---- ES256: the 64-byte signature r || s (what a JWT carries) ----
+   The one-time number k is not random: it is HMAC(private key, hash of the message + a counter), 512 bits reduced mod n, so the same message
+   always gets the same signature and two different messages never share a k. If k, r or s comes out 0 the counter moves on. */
+function es256Sign_(d, msg) {
+  var c = p256_(), hash = sha256_(msg), z = bigFromBytes_(hash), dBytes = bigToBytes_(d, 32);
+  for (var ctr = 0; ctr < 32; ctr++) {
+    var k = bigMod_(bigFromBytes_(hmac256_(dBytes, hash.concat([ctr, 1])).concat(hmac256_(dBytes, hash.concat([ctr, 2])))), c.n);
+    if (k === c.zero) continue;
+    var R = p256Mul_(k, c.gx, c.gy), r = bigMod_(R.x, c.n);
+    if (r === c.zero) continue;
+    var s = bigMod_(modInv_(k, c.n) * (z + r * d), c.n);
+    if (s === c.zero) continue;
+    return bigToBytes_(r, 32).concat(bigToBytes_(s, 32));
+  }
+  throw new Error('Could not sign.');
+}
+function p256PublicBytes_(d) {                            // the 65-byte uncompressed point 04 || x || y
+  var c = p256_(), R = p256Mul_(d, c.gx, c.gy);
+  return [4].concat(bigToBytes_(R.x, 32), bigToBytes_(R.y, 32));
+}
+
+/* ---- the sender's key pair (VAPID), made here the first time it is needed ---- */
+function randomScalar_() {                                // 1 .. n-1, from the random parts of four UUIDs mixed through HMAC (twice, so the reduction mod n has no bias)
+  var c = p256_(), key = asciiBytes_(Utilities.getUuid() + Utilities.getUuid()), seed = Utilities.getUuid() + Utilities.getUuid() + ':' + Date.now();
+  var raw = hmac256_(key, asciiBytes_(seed + ':1')).concat(hmac256_(key, asciiBytes_(seed + ':2')));
+  return bigMod_(bigFromBytes_(raw), c.n - c.one) + c.one;
+}
+function parseVapidPrivate_(s) {
+  var c = p256_();
+  if (!/^[A-Za-z0-9_-]{43}$/.test(String(s || ''))) return null;
+  var d = bigFromBytes_(b64uBytes_(s));
+  return d > c.zero && d < c.n ? d : null;
+}
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return fn(); } finally { try { lock.releaseLock(); } catch (e) { /* already released */ } }
+}
+/* { d: private scalar (BigInt), pub: the public key as base64url of the 65-byte point } */
+function vapidKeys_() {
+  var props = PropertiesService.getScriptProperties();
+  var read = function () { return { d: parseVapidPrivate_(props.getProperty('VAPID_PRIVATE')), pub: String(props.getProperty('VAPID_PUBLIC') || '') }; };
+  var k = read();
+  if (k.d && /^[A-Za-z0-9_-]{87}$/.test(k.pub)) return k;
+  return withLock_(function () {                          // two first requests at once must not make two key pairs
+    var k2 = read();
+    if (!k2.d) { k2.d = randomScalar_(); props.setProperty('VAPID_PRIVATE', b64u_(bigToBytes_(k2.d, 32))); }
+    var pub = b64u_(p256PublicBytes_(k2.d));
+    if (pub !== k2.pub) props.setProperty('VAPID_PUBLIC', pub);
+    return { d: k2.d, pub: pub };
+  });
+}
+function vapidSubject_() {
+  var s = String(PropertiesService.getScriptProperties().getProperty('VAPID_SUBJECT') || '');
+  return /^(mailto:[^\s@]+@[^\s@]+|https:\/\/[^\s]+)$/.test(s) && /^[\x21-\x7e]+$/.test(s) ? s : VAPID_SUBJECT;
+}
+
+/* The Authorization header for one push: 'vapid t=<JWT>, k=<public key>'. The JWT says who the push is for (the push service's origin),
+   until when (12 hours) and who to contact. `cache` (optional, one run) keeps the keys and one header per push service. */
+function pushOrigin_(endpoint) {
+  var m = /^https:\/\/([a-z0-9.-]+)(?::443)?(?:[\/?#]|$)/i.exec(String(endpoint));
+  return m ? 'https://' + m[1].toLowerCase() : '';
+}
+function buildVapidHeader_(endpoint, nowSec, cache) {
+  var aud = pushOrigin_(endpoint);
+  if (!aud) throw new Error('Not an https address.');
+  cache = cache || {};
+  if (cache['h ' + aud]) return cache['h ' + aud];
+  var keys = cache.keys || (cache.keys = vapidKeys_());
+  var input = b64u_(asciiBytes_('{"typ":"JWT","alg":"ES256"}')) + '.' + b64u_(asciiBytes_(JSON.stringify({ aud: aud, exp: nowSec + 12 * 3600, sub: vapidSubject_() })));
+  var header = 'vapid t=' + input + '.' + b64u_(es256Sign_(keys.d, asciiBytes_(input))) + ', k=' + keys.pub;
+  cache['h ' + aud] = header;
+  return header;
+}
+
+/* ---- who is on the list: the "Reminders" sheet ---- */
+function remindSheet_(db, create) {
+  var s = db.ss.getSheetByName('Reminders');
+  if (!s && create) {
+    s = db.ss.insertSheet('Reminders', db.ss.getSheets().length);
+    s.getRange(1, 1, 1, REMIND_COLS.length).setValues([REMIND_COLS]).setFontWeight('bold');
+    s.setFrozenRows(1);
+  }
+  return s || null;
+}
+function remindRowOf_(sheet, endpoint) {
+  var last = sheet.getLastRow();
+  if (last < 2) return 0;
+  var eps = sheet.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < eps.length; i++) if (eps[i][0] === endpoint) return i + 2;
+  return 0;
+}
+function readSubscribers_(sheet) {
+  var last = sheet ? sheet.getLastRow() : 0, out = [];
+  if (last < 2) return out;
+  sheet.getRange(2, 1, last - 1, REMIND_COLS.length).getValues().forEach(function (r, i) {
+    if (r[0]) out.push({ row: i + 2, endpoint: String(r[0]), name: String(r[1]), slug: String(r[2]), email: String(r[3]), added: r[4], updated: r[5], lastSent: r[6], lastResult: r[7] });
+  });
+  return out;
+}
+/* the push address to keep, or '' if it is not one we send to: https, not too long, on one of the push services' own hosts, no odd characters */
+function pushEndpointOk_(v) {
+  if (typeof v !== 'string' || v.length > 1000) return '';
+  var m = /^https:\/\/([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::443)?(?:\/[\x21-\x7e]*)?$/i.exec(v);
+  if (!m) return '';
+  var host = m[1].toLowerCase();
+  return PUSH_HOSTS.some(function (h) { return host === h || host.slice(-h.length - 1) === '.' + h; }) ? v : '';
+}
+/* text for a sheet cell: a leading = + - @ would make Sheets read it as a formula */
+function cellText_(s) { return String(s).replace(/^[=+\-@\s]+/, ''); }
+
+/* ---------- the remind action: { action: 'remind', op: 'key' | 'join' | 'leave' | 'status', ... } ---------- */
+function remind_(b) {
+  var op = typeof b.op === 'string' ? b.op : '';
+  if (op === 'key') return { ok: true, key: vapidKeys_().pub };
+  if (op === 'join') return remindJoin_(b);
+  if (op === 'leave') return remindLeave_(b);
+  if (op === 'status') return remindStatus_(b);
+  throw fail_('Unknown reminder request.');
+}
+function remindJoin_(b) {
+  var endpoint = pushEndpointOk_(b.endpoint);
+  if (!endpoint) throw fail_('That phone or browser address cannot be used for reminders.');
+  var name = cellText_(str_(typeof b.name === 'string' ? b.name : '', 80));
+  if (!name) throw fail_('The name is missing.');
+  var email = typeof b.email === 'string' ? cellText_(emailOf_(b.email)) : '';
+  return withLock_(function () {
+    var db = open_(), sheet = remindSheet_(db, true), row = remindRowOf_(sheet, endpoint), at = new Date().toISOString();
+    if (row) {
+      var added = sheet.getRange(row, 5, 1, 1).getValue();
+      sheet.getRange(row, 2, 1, 5).setValues([[name, slug_(name), email, added, at]]);
+    } else {
+      if (sheet.getLastRow() - 1 >= REMIND_MAX) throw fail_('Too many phones have reminders on already.');
+      sheet.getRange(sheet.getLastRow() + 1, 1, 1, REMIND_COLS.length).setValues([[endpoint, name, slug_(name), email, at, at, '', '']]);
+    }
+    return { ok: true };
+  });
+}
+function remindLeave_(b) {
+  var endpoint = typeof b.endpoint === 'string' ? b.endpoint : '';
+  return withLock_(function () {
+    var sheet = remindSheet_(open_(), false), row = sheet && endpoint ? remindRowOf_(sheet, endpoint) : 0;
+    if (row) sheet.deleteRow(row);
+    return { ok: true };
+  });
+}
+function remindStatus_(b) {
+  var endpoint = typeof b.endpoint === 'string' ? b.endpoint : '';
+  var sheet = remindSheet_(open_(), false);
+  return { ok: true, on: !!(sheet && endpoint && remindRowOf_(sheet, endpoint)) };
+}
+
+/* ---------- sending ---------- */
+function shouldRemind_(day) { return REMIND_DAYS.indexOf(day) >= 0; }
+function remindParts_(date) {                             // today in Malaysia, whatever time zone the script itself is set to
+  var s = Utilities.formatDate(date, REMIND_TZ, 'yyyy-MM-dd').split('-');
+  return { y: +s[0], m: +s[1], d: +s[2] };
+}
+function targetMonth_(parts) {                            // the month before (parts = { y, m }), as 2026-10
+  var y = parts.y, m = parts.m - 1;
+  if (m < 1) { m = 12; y--; }
+  return y + '-' + (m < 10 ? '0' : '') + m;
+}
+/* the people still to be reminded: whoever has no claim for `month` (isClaimed gets the claim id 2026-10_chin-zhi-liang; people are matched by slug_(name) only) */
+function subscribersToRemind_(subs, month, isClaimed) {
+  return subs.filter(function (s) { return !isClaimed(month + '_' + slug_(s.name)); });
+}
+/* has this claim id been sent (or started to be sent)? The id column is read once, only the rows that exist are opened */
+function claimedCheck_(db) {
+  var ids = Object.create(null), last = db.sheet.getLastRow();
+  if (last >= 2) db.sheet.getRange(2, 1, last - 1, 1).getValues().forEach(function (r) { ids[r[0]] = 1; });
+  return function (id) {
+    if (ids[id] !== 1) return false;
+    var rec = getRec_(db, id);
+    return !!(rec && (rec.published || rec.pending));
+  };
+}
+/* one push with no text; returns the push service's HTTP status */
+function sendPush_(endpoint, cache) {
+  var res = UrlFetchApp.fetch(endpoint, { method: 'post', muteHttpExceptions: true,
+    headers: { 'TTL': '86400', 'Urgency': 'normal', 'Authorization': buildVapidHeader_(endpoint, Math.floor(Date.now() / 1000), cache) } });
+  return res.getResponseCode();
+}
+/* write down what happened (under the lock, finding each row again by its address: rows move when people join or leave in the meantime) */
+function remindSave_(db, results) {
+  if (!results.length) return 0;
+  return withLock_(function () {
+    var sheet = remindSheet_(db, false), last = sheet ? sheet.getLastRow() : 0, removed = 0;
+    if (last < 2) return 0;
+    var eps = sheet.getRange(2, 1, last - 1, 1).getValues(), tail = sheet.getRange(2, 7, last - 1, 2).getValues(), byEp = Object.create(null), gone = [];
+    results.forEach(function (r) { byEp[r.endpoint] = r; });
+    for (var i = 0; i < eps.length; i++) {
+      var r = byEp[eps[i][0]];
+      if (!r) continue;
+      if (r.code === 404 || r.code === 410) gone.push(i + 2);          // the phone or browser has switched notifications off for good
+      else tail[i] = [r.at, r.code];
+    }
+    sheet.getRange(2, 7, last - 1, 2).setValues(tail);
+    gone.reverse().forEach(function (row) { sheet.deleteRow(row); removed++; });
+    return removed;
+  });
+}
+/* the whole job; `force` (remindNow) ignores the day and the "already claimed" check */
+function remindRun_(now, force) {
+  var parts = remindParts_(now), month = targetMonth_(parts);
+  var summary = { day: parts.d, month: month, subscribers: 0, due: 0, sent: 0, ok: 0, failed: 0, removed: 0, notReached: 0 };
+  if (!force && !shouldRemind_(parts.d)) { console.log('Reminders: the ' + parts.d + ' is not a reminder day (' + REMIND_DAYS.join(', ') + '), nothing sent.'); return summary; }
+  var db = open_(), subs = readSubscribers_(remindSheet_(db, false));
+  var due = force ? subs : subscribersToRemind_(subs, month, claimedCheck_(db));
+  summary.subscribers = subs.length; summary.due = due.length;
+  if (due.length) {
+    var cache = {}, started = Date.now(), results = [];
+    for (var i = 0; i < due.length; i++) {
+      if (Date.now() - started >= REMIND_BUDGET_MS) { summary.notReached = due.length - i; break; }
+      var code;
+      try {
+        if (!pushEndpointOk_(due[i].endpoint)) throw new Error('not a push address');           // the sheet may have been edited by hand
+        code = sendPush_(due[i].endpoint, cache);
+      } catch (e) { code = 'error: ' + str_(e && e.message, 60); }
+      results.push({ endpoint: due[i].endpoint, code: code, at: new Date().toISOString() });
+      summary.sent++;
+      if (code >= 200 && code < 300) summary.ok++; else if (code !== 404 && code !== 410) summary.failed++;
+    }
+    summary.removed = remindSave_(db, results);
+  }
+  console.log('Reminders for ' + month + ': ' + summary.subscribers + ' on the list, ' + summary.due + ' to remind, ' + summary.sent + ' sent (' + summary.ok + ' accepted, ' +
+    summary.failed + ' failed, ' + summary.removed + ' removed as gone)' + (summary.notReached ? ', ' + summary.notReached + ' not reached before the time ran out' : '') + '.');
+  return summary;
+}
+
+/* The time trigger's job: on a reminder day, ping everyone who has not sent last month's claim yet. */
+function remindDaily() { return remindRun_(new Date(), false); }
+/* For testing by hand (editor: pick remindNow, Run): pings everyone on the list now, claimed or not, on any day. */
+function remindNow() {
+  var s = remindRun_(new Date(), true);
+  console.log('remindNow: ' + s.sent + ' reminder(s) sent to ' + s.subscribers + ' on the list.');
+  return s;
+}
+/* Run once from the editor (pick setupReminders, Run): a daily trigger at 9am Malaysia time (Google runs it some time between 9 and 10). */
+function setupReminders() {
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'remindDaily') { ScriptApp.deleteTrigger(t); removed++; }
+  });
+  ScriptApp.newTrigger('remindDaily').timeBased().everyDays(1).atHour(9).inTimezone(REMIND_TZ).create();
+  vapidKeys_();                                           // the sender's key pair exists from now on
+  console.log('setupReminders: ' + (removed ? 'replaced ' + removed + ' old trigger(s) with' : 'made') + ' one daily trigger for remindDaily at 09:00 ' + REMIND_TZ +
+    '. It sends on the ' + REMIND_DAYS.join(', ') + ' of each month.');
 }
