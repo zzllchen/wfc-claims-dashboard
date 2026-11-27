@@ -836,3 +836,14 @@ dialog.rulesdlg[open] { display: block; }
   .icard .icv small { line-height: 1; }
   .icard.empty .icv b { font-size: 26px; }
 }
+
+/* export for AutoCount */
+.ac-f { display: grid; gap: 5px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ac-f input, .ac-f select { width: 100%; font-size: 14.5px; font-weight: 500; color: var(--ink); }
+.ac-sum { margin: 0; padding: 10px 12px; border-radius: 10px; background: #f4f7ff; font-size: 14.5px; font-weight: 650; }
+.ac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 12px; }
+.ac-f input.ac-tbc { border-color: #f0b429; background: #fffbea; }
+.ac-more summary { cursor: pointer; font-weight: 600; color: var(--muted); font-size: 14px; padding: 4px 0; }
+.ac-more[open] { display: grid; gap: 10px; }
+.ac-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: #fff4e5; color: #8a4b08; font-size: 13.5px; }
+.ac-note + .ac-note { margin-top: 8px; }

@@ -26,6 +26,16 @@ Press **Leave** (the number beside it is how many applications are still New). A
 - One application per person per start date: saving the same leave form again replaces it (and sets it back to New, history kept). Changing the start date and saving makes a second application.
 - **Show sample claims** on the Claims tab fills both tabs with made-up examples, dated around today.
 
+## Export for AutoCount (no retyping)
+
+**Export > Export for AutoCount** makes one Excel file of journal entries from the claims on screen (month, staff and search filters apply; by default only claims marked **Checked**). In AutoCount: **Journal Entry > Import From Excel**.
+
+- One document per claim: a debit line per receipt (or one per account) on the expense account of its type, and one credit line on the claims-payable account, so each document balances. Sheet **Check** lists one line per claim to compare totals.
+- The document number is made from the claim (`CL2610-ALEXTAN-EUMM`), so exporting the same claim again updates that entry instead of adding a second one. The date is the last day of the claim month, or the day it was sent (setting).
+- **Set once, remembered on that PC:** the account code for each type, the claims-payable account, journal type, number prefix and, under *More settings*, the column names.
+- **Not yet confirmed with AutoCount:** the column names (`DocNo, DocDate, JournalType, Description, CurrencyCode, CurrencyRate, AccNo, ToAccountRate, DetailDescription, DR, CR`) follow AutoCount's published naming, but we have not seen the accountant's own Journal Entry template. Codes starting `TBC-` are placeholders that AutoCount will reject. To confirm: download the template from the accountant's AutoCount (its *Guide* sheet lists the columns), rename the columns under *More settings* if they differ, and import one claim into a **test** database first.
+- Code: `js/autocount.js`, test: `node tests/autocount.test.js`.
+
 ## The demo (one PC, needs Node.js and Python, nothing else)
 
 1. Double-click **`Start Demo.bat`**. Two black windows open (leave them), then two browser tabs: the **dashboard** (http://localhost:8787/) and the **Claim Builder** (http://localhost:8080/, already pointed at the dashboard).

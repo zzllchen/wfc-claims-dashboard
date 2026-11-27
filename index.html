@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=27">
+<link rel="stylesheet" href="css/style.css?v=28">
 </head>
 <body>
 <header class="top">
@@ -33,6 +33,7 @@
       <div class="menuwrap">
         <button class="ghost" id="btnExport" type="button" aria-haspopup="true" aria-expanded="false">Export</button>
         <div class="menu" id="exportMenu" hidden>
+          <button type="button" data-export="autocount" data-view="claims">Export for AutoCount <small>journal entries to import, nothing typed twice</small></button>
           <button type="button" data-export="claims" data-view="claims">Claims list <small>one row per claim</small></button>
           <button type="button" data-export="lines" data-view="claims">Every line <small>one row per receipt line</small></button>
           <button type="button" data-export="audit" data-view="claims">Audit report <small>one row per flag, with the reason</small></button>
@@ -152,6 +153,28 @@
   </form>
 </dialog>
 
+<dialog id="acDlg" class="rulesdlg acdlg" aria-labelledby="acTitle">
+  <form id="acForm" method="dialog">
+    <h2 id="acTitle">Export for AutoCount</h2>
+    <p class="rl-lead">One Excel file of journal entries. In AutoCount open Journal Entry, then Import From Excel.</p>
+    <label class="ac-f"><span>Claims to include (from the month and staff you are viewing)</span><select id="acWhich"><option value="checked">Checked, ready to book</option><option value="newchecked">New and checked</option><option value="all">All shown</option></select></label>
+    <p class="ac-sum" id="acSum"></p>
+    <div class="ac-grid" id="acAccounts"></div>
+    <details class="ac-more"><summary>More settings</summary>
+      <div class="ac-grid">
+        <label class="ac-f"><span>Journal type</span><input type="text" id="acJType" maxlength="10"></label>
+        <label class="ac-f"><span>Document number starts with</span><input type="text" id="acPrefix" maxlength="3"></label>
+        <label class="ac-f"><span>Document date</span><select id="acDate"><option value="monthEnd">Last day of the claim month</option><option value="sent">The day the claim was sent</option></select></label>
+        <label class="ac-f"><span>Debit lines</span><select id="acGroup"><option value="receipt">One per receipt</option><option value="account">One per account</option></select></label>
+      </div>
+      <p class="rl-note">Column names: change them if the AutoCount import template names them differently.</p>
+      <div class="ac-grid" id="acHeaders"></div>
+    </details>
+    <div id="acWarn"></div>
+    <div class="rl-acts"><button class="ghost" type="button" id="acCancel">Cancel</button><button class="primary" type="submit" id="acGo">Download Excel</button></div>
+  </form>
+</dialog>
+
 <div class="lock" id="lock" hidden>
   <div class="loginhero">
     <div class="lhtop"><img id="lockLogo" alt="WFC Systems"></div>
@@ -192,6 +215,7 @@
 <script defer src="js/askui.js?v=4"></script>
 <script defer src="js/sample.js?v=5"></script>
 <script defer src="js/select.js?v=1"></script>
-<script defer src="js/app.js?v=18"></script>
+<script defer src="js/autocount.js?v=1"></script>
+<script defer src="js/app.js?v=19"></script>
 </body>
 </html>

@@ -975,7 +975,74 @@
     return '﻿' + rows.map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
   }
 
+  /* ---------- export for AutoCount (js/autocount.js): the claims on screen as journal entries, so the accountant imports instead of typing.
+     Account codes and column names are the accountant's own: typed once here and remembered on this PC. ---------- */
+  const AC_KEY = 'wfc-autocount';
+  const acLoad = () => { try { return JSON.parse(localStorage.getItem(AC_KEY) || '{}') || {}; } catch (e) { return {}; } };
+  const acStore = (v) => { try { localStorage.setItem(AC_KEY, JSON.stringify(v)); } catch (e) { /* private window */ } };
+  let acCfg = null;
+  const acClaims = () => {
+    const w = $('#acWhich').value;
+    return all().filter(inScope).filter((c) => (w === 'all' ? true : c.status === 'checked' || (w === 'newchecked' && c.status === 'new')))
+      .sort((a, b) => a.month.localeCompare(b.month) || a.claimant.localeCompare(b.claimant));
+  };
+  const acField = (label, value, attrs) => h('label', { class: 'ac-f' }, h('span', { text: label }), h('input', Object.assign({ type: 'text', value }, attrs)));
+  function openAutocount() {
+    acCfg = window.AutoCount.settings(acLoad());
+    $('#acJType').value = acCfg.journalType; $('#acPrefix').value = acCfg.prefix; $('#acDate').value = acCfg.dateMode; $('#acGroup').value = acCfg.grouping;
+    $('#acHeaders').textContent = '';
+    window.AutoCount.COLUMNS.forEach((k) => $('#acHeaders').append(acField(k, acCfg.headers[k], { 'data-head': k, maxlength: '40' })));
+    $('#acWhich').value = all().filter(inScope).some((c) => c.status === 'checked') ? 'checked' : 'newchecked';
+    paintAccounts(); paintAutocount();
+    $('#acDlg').showModal();
+  }
+  // a box for the account of every type in the chosen claims, and one for the account the money is owed from
+  function paintAccounts() {
+    const used = new Set();
+    acClaims().forEach((c) => c.lines.forEach((l) => used.add(window.AutoCount.CATEGORIES.includes(l.category) ? l.category : 'Other')));
+    const box = $('#acAccounts');
+    box.textContent = '';
+    window.AutoCount.CATEGORIES.filter((k) => used.has(k)).forEach((k) => box.append(acField(k + ' account', acCfg.accounts[k], { 'data-cat': k, maxlength: '12' })));
+    if (used.size) box.append(acField('Claims payable account', acCfg.payable, { 'data-payable': '1', maxlength: '12' }));
+  }
+  function readAutocount() {
+    acCfg.journalType = $('#acJType').value; acCfg.prefix = $('#acPrefix').value; acCfg.dateMode = $('#acDate').value; acCfg.grouping = $('#acGroup').value;
+    document.querySelectorAll('#acAccounts [data-cat]').forEach((i) => { acCfg.accounts[i.dataset.cat] = i.value; });
+    const p = document.querySelector('#acAccounts [data-payable]'); if (p) acCfg.payable = p.value;
+    document.querySelectorAll('#acHeaders [data-head]').forEach((i) => { acCfg.headers[i.dataset.head] = i.value; });
+    acStore(acCfg);
+  }
+  function paintAutocount() {
+    const out = window.AutoCount.build(acClaims(), acCfg), n = out.docs.length;
+    $('#acSum').textContent = n ? `${n} claim${n > 1 ? 's' : ''}, ${out.lines} receipt${out.lines > 1 ? 's' : ''}, ${money(out.total)}` : 'No claims match. Mark claims as Checked, or choose another list above.';
+    document.querySelectorAll('#acAccounts input').forEach((i) => i.classList.toggle('ac-tbc', !i.value.trim() || /^TBC-/i.test(i.value.trim())));
+    const warn = $('#acWarn');
+    warn.textContent = '';
+    if (S.sample) warn.append(h('p', { class: 'ac-note', text: 'These are sample claims with made-up figures. Do not import them into your books.' }));
+    if (out.placeholders.length) warn.append(h('p', { class: 'ac-note', text: 'The yellow codes starting "TBC-" are placeholders. Type your own AutoCount account codes before importing; they are remembered on this PC.' }));
+    out.problems.forEach((t) => warn.append(h('p', { class: 'ac-note', text: t })));
+    $('#acGo').disabled = !n;
+  }
+  async function saveAutocount() {
+    readAutocount();
+    const out = window.AutoCount.build(acClaims(), acCfg);
+    if (!out.docs.length) return;
+    try {
+      const months = Array.from(new Set(out.docs.map((d) => d.month)));
+      saveAs(await window.AutoCount.xlsxBlob(out), `${S.sample ? 'SAMPLE - ' : ''}AutoCount claims - ${months.length === 1 ? months[0] : months.length + ' months'}.xlsx`);
+      $('#acDlg').close();
+      toast(`Saved ${out.docs.length} journal ${out.docs.length > 1 ? 'entries' : 'entry'}. In AutoCount: Journal Entry, then Import From Excel.`);
+    } catch (e) { console.error(e); toast("The Excel file couldn't be made: " + ((e && e.message) || e), true); }
+  }
+  function wireAutocount() {
+    $('#acCancel').addEventListener('click', () => $('#acDlg').close());
+    $('#acForm').addEventListener('submit', (e) => { e.preventDefault(); saveAutocount(); });
+    $('#acWhich').addEventListener('change', () => { paintAccounts(); paintAutocount(); });
+    $('#acForm').addEventListener('input', (e) => { if (e.target.id !== 'acWhich') { readAutocount(); paintAutocount(); } });
+  }
+
   function exportCsv(kind) {
+    if (kind === 'autocount') { openAutocount(); return; }
     if (kind === 'leave') {
       const ll = leaveAll().filter(lInView).sort((a, b) => a.start.localeCompare(b.start) || a.claimant.localeCompare(b.claimant));
       if (!ll.length) { toast('Nothing to export for this view.', true); return; }
@@ -1075,6 +1142,7 @@
       render();
     }));
     $('#btnAsk').addEventListener('click', () => { if (window.AskUI) window.AskUI.open(); });
+    wireAutocount();
     addEventListener('scroll', () => stickyCheck(), { passive: true });
     addEventListener('resize', () => stickyCheck(true));
     $('#fClear').addEventListener('click', () => { S.f = { month: 'all', staff: 'all', status: 'all', q: '' }; $('#fSearch').value = ''; render(); stickyCheck(true); });
