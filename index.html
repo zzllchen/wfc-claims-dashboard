@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="stylesheet" href="css/style.css?v=28">
+<link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
 <header class="top">
@@ -61,6 +61,8 @@
 
     <!-- at a glance: the auditor, spend, software & AI tools and carbon for the claims in view; each opens its details in the side panel -->
     <section class="ins" id="ins" aria-label="At a glance"></section>
+
+    <div class="cleanbar" id="cleanBar" hidden><span id="cleanText"></span><button class="primary" type="button" id="cleanBtn" hidden></button></div>
 
     <section class="card tablecard" aria-label="Claims">
       <div class="scroll">
@@ -153,6 +155,16 @@
   </form>
 </dialog>
 
+<dialog id="cleanDlg" class="rulesdlg" aria-labelledby="cleanTitle">
+  <form id="cleanForm" method="dialog">
+    <h2 id="cleanTitle">Mark as Checked</h2>
+    <p class="rl-lead">These passed every check the auditor ran. That is not a guarantee: close this and open any claim you want to look at first.</p>
+    <ul class="cleanlist" id="cleanList"></ul>
+    <p class="ac-sum" id="cleanSum"></p>
+    <div class="rl-acts"><button class="ghost" type="button" id="cleanCancel">Cancel</button><button class="primary" type="submit">Mark as Checked</button></div>
+  </form>
+</dialog>
+
 <dialog id="acDlg" class="rulesdlg acdlg" aria-labelledby="acTitle">
   <form id="acForm" method="dialog">
     <h2 id="acTitle">Export for AutoCount</h2>
@@ -209,13 +221,13 @@
 <script defer src="js/inbox.js?v=6"></script>
 <script defer src="js/leave.js?v=1"></script>
 <script defer src="js/carbon.js?v=1"></script>
-<script defer src="js/audit.js?v=7"></script>
+<script defer src="js/audit.js?v=8"></script>
 <script defer src="js/subs.js?v=1"></script>
 <script defer src="js/askflow.js?v=6"></script>
 <script defer src="js/askui.js?v=4"></script>
 <script defer src="js/sample.js?v=5"></script>
 <script defer src="js/select.js?v=1"></script>
 <script defer src="js/autocount.js?v=1"></script>
-<script defer src="js/app.js?v=19"></script>
+<script defer src="js/app.js?v=20"></script>
 </body>
 </html>

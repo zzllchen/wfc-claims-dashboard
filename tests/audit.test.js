@@ -137,4 +137,13 @@ ok('the audit report has a row per flag and the totals', () => {
   assert.deepStrictEqual(rows[0].slice(0, 4), ['Level', 'Check', 'Staff', 'Month']);
   assert.deepStrictEqual(rows[rows.length - 1], ['On high and medium flags', '310.00']);
 });
+ok('clean claims: only New ones with no flag at all, and only once every check has run', () => {
+  const c = (id, status) => ({ id, status: status || 'new' });
+  const list = [c('clean'), c('flagged'), c('low'), c('done', 'checked'), c('asked', 'question'), c('unread'), c('photo')];
+  const byClaim = { flagged: [{ level: 'high' }], low: [{ level: 'low' }] };
+  const all = A.cleanClaims(list, byClaim, {});
+  assert.deepStrictEqual(all.ready.map((x) => x.id), ['clean', 'unread', 'photo'], 'with no rules and no photos to compare');
+  const some = A.cleanClaims(list, byClaim, { rulesRead: (x) => x.id !== 'unread', waiting: new Set(['photo', 'flagged']) });
+  assert.deepStrictEqual([some.ready.map((x) => x.id), some.waiting.map((x) => x.id)], [['clean'], ['unread', 'photo']], 'a claim not yet fully checked waits');
+});
 console.log('audit tests passed');

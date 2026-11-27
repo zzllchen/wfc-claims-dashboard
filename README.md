@@ -26,6 +26,10 @@ Press **Leave** (the number beside it is how many applications are still New). A
 - One application per person per start date: saving the same leave form again replaces it (and sets it back to New, history kept). Changing the start date and saving makes a second application.
 - **Show sample claims** on the Claims tab fills both tabs with made-up examples, dated around today.
 
+## Mark clean claims as Checked (one click)
+
+A green bar above the claims table says how many **New** claims passed every check, with **Mark N clean claims as Checked**. It lists names, months and totals first; confirm to mark them. Only claims with **no flag of any level** count, in the month, staff and search being viewed. A claim whose company-rules reading or photo comparison has not finished is shown as *still being checked* and is never ticked. "Passed" means the auditor found nothing, not that the claim is proven right. Code: `Audit.cleanClaims` in `js/audit.js`, tested in `tests/audit.test.js`.
+
 ## Export for AutoCount (no retyping)
 
 **Export > Export for AutoCount** makes one Excel file of journal entries from the claims on screen (month, staff and search filters apply; by default only claims marked **Checked**). In AutoCount: **Journal Entry > Import From Excel**.

@@ -280,7 +280,20 @@ Work out any sums yourself carefully from the lines given. Return {"findings": [
     return out;
   }
 
-  const api = { run, photoCandidates, policyRequest, policyFindings, policyKey, csvRows, CHECK, LEVELS, LEVEL_WORD, EXAMPLE_RULES, POLICY_SCHEMA, kindOf };
+  /* New claims that passed every check, so they can be marked Checked in one go. Ready = status New, no flag of any level, the company's rules
+     (when there are any) already read for it, and no photo comparison still outstanding. Anything not checked yet waits; it is never ticked.
+     opts: { rulesRead: (claim) => bool, waiting: Set of claim ids } -> { ready: [claims], waiting: [claims] } */
+  function cleanClaims(claims, byClaim, opts) {
+    const o = opts || {}, ready = [], waiting = [];
+    (claims || []).forEach((c) => {
+      if (c.status !== 'new' || ((byClaim || {})[c.id] || []).length) return;
+      const unread = (o.rulesRead && !o.rulesRead(c)) || (o.waiting && o.waiting.has(c.id));
+      (unread ? waiting : ready).push(c);
+    });
+    return { ready, waiting };
+  }
+
+  const api = { run, cleanClaims, photoCandidates, policyRequest, policyFindings, policyKey, csvRows, CHECK, LEVELS, LEVEL_WORD, EXAMPLE_RULES, POLICY_SCHEMA, kindOf };
   root.Audit = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

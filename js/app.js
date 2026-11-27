@@ -255,9 +255,51 @@
   }
 
   /* ---------- drawing the page ---------- */
+  /* ---------- clean claims in one go: the New claims on screen that passed every check (see Audit.cleanClaims) ---------- */
+  function cleanNow() {
+    if (!AUD) return { ready: [], waiting: [] };
+    const rules = rulesText(), read = rules ? store.get(POLICY_STORE) : null, waiting = new Set();
+    if (!S.sample) {                                        // two lines whose photos still have to be compared (only the first 12 pairs ever are)
+      const hashes = store.get(PHOTO_STORE);
+      AUD.photoCandidates(S.real).forEach((p, i) => [p.a, p.b].forEach((x) => { if (i >= 12 || !hashes[`${x.claimId}|${x.version}|${x.fileId}`]) waiting.add(x.claimId); }));
+    }
+    const audit = auditNow();
+    return AUD.cleanClaims(all().filter(inScope), (audit && audit.byClaim) || {}, { rulesRead: (c) => !rules || !!read[AUD.policyKey(c, rules)], waiting });
+  }
+  function paintClean() {
+    const bar = $('#cleanBar'), { ready, waiting } = cleanNow(), n = ready.length;
+    bar.hidden = !n && !waiting.length;
+    const text = [];
+    if (n) text.push(`${n} new claim${n > 1 ? 's' : ''} passed every check.`);
+    if (waiting.length) text.push(`${waiting.length} more still being checked.`);
+    $('#cleanText').textContent = text.join(' ');
+    const b = $('#cleanBtn');
+    b.hidden = !n; b.textContent = `Mark ${n} clean claim${n > 1 ? 's' : ''} as Checked`;
+  }
+  let cleanIds = [];
+  function openClean() {
+    const list = cleanNow().ready.slice().sort((a, b) => a.claimant.localeCompare(b.claimant) || a.month.localeCompare(b.month));
+    if (!list.length) return;
+    cleanIds = list.map((c) => c.id);
+    $('#cleanList').textContent = '';
+    list.forEach((c) => $('#cleanList').append(h('li', {}, h('span', {}, h('b', { text: c.claimant }), h('small', { text: `${c.monthLabel} · ${c.lines.length} receipt${c.lines.length > 1 ? 's' : ''}` })), h('b', { text: money(c.total) }))));
+    $('#cleanSum').textContent = `${list.length} claim${list.length > 1 ? 's' : ''}, ${money(list.reduce((t, c) => t + Number(c.total || 0), 0))}`;
+    $('#cleanDlg').showModal();
+  }
+  async function markClean() {
+    $('#cleanDlg').close();
+    const still = new Set(cleanNow().ready.map((c) => c.id));          // checked again: a claim may have changed while the list was open
+    const ids = cleanIds.filter((id) => still.has(id));
+    $('#cleanBtn').disabled = true;
+    for (const id of ids) { if (S.locked) break; await changeStatus(id, 'checked'); }
+    $('#cleanBtn').disabled = false;
+    const done = ids.filter((id) => { const c = find(id); return c && c.status === 'checked'; }).length, left = cleanIds.length - done;
+    toast(`Marked ${done} claim${done === 1 ? '' : 's'} as Checked${left ? `. ${left} not marked: look at ${left === 1 ? 'it' : 'them'} again.` : S.sample ? ' (sample only)' : '.'}`, !!left);
+  }
+
   function render() {
     paintTop(); paintTabs(); paintBanner();
-    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintAudit(); paintSpend(); paintSubs(); paintCarbon(); paintGlance(); }
+    if (S.view === 'leave') paintLeave(); else { paintFilters(); paintTiles(); paintTable(); paintAudit(); paintSpend(); paintSubs(); paintCarbon(); paintGlance(); paintClean(); }
     if (S.open) {                  // the panel is only redrawn when its claim changed, so a note being typed is not wiped by the 20-second refresh
       const c = find(S.open);
       if (!c) closeDrawer(); else if (S.drawerSig !== drawerSigOf(c)) paintDrawer(true);
@@ -1143,6 +1185,9 @@
     }));
     $('#btnAsk').addEventListener('click', () => { if (window.AskUI) window.AskUI.open(); });
     wireAutocount();
+    $('#cleanBtn').addEventListener('click', openClean);
+    $('#cleanCancel').addEventListener('click', () => $('#cleanDlg').close());
+    $('#cleanForm').addEventListener('submit', (e) => { e.preventDefault(); markClean(); });
     addEventListener('scroll', () => stickyCheck(), { passive: true });
     addEventListener('resize', () => stickyCheck(true));
     $('#fClear').addEventListener('click', () => { S.f = { month: 'all', staff: 'all', status: 'all', q: '' }; $('#fSearch').value = ''; render(); stickyCheck(true); });
